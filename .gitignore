@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Backend cache
+backend/app/data/*.pkl
+
+# Node
+node_modules/
+frontend/dist/
+bun.lock
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Course documents (private)
+*.docx
+
+# Vite default assets
+frontend/src/assets/hero.png
+frontend/src/assets/vite.svg
+frontend/public/icons.svg
+frontend/public/favicon.svg
