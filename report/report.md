@@ -375,7 +375,25 @@ def expand(self, query_terms, max_synonyms=3):
 3. **查询扩展页面**：展示同义词映射关系（原词 → 同义词列表），用户可调节同义词数量。
 4. **词典浏览页面**：分页展示词典（词项、文档频率、总词频），可点击查看任意词项的完整倒排记录表（文档 ID、词频、位置列表）。
 
-<!-- 此处插入各页面运行截图 -->
+图 9 为布尔检索界面，用户输入 `aerodynamics AND wing NOT flutter`，系统返回 70 条结果，匹配词项以黄色高亮显示，结果按余弦相似度降序排列。
+
+![图 9 布尔检索界面](figures/screenshot_boolean.png)
+
+图 10 为短语查询界面，查询 `boundary layer`，系统通过位置信息匹配到 367 篇包含该短语的文档。
+
+![图 10 短语查询界面](figures/screenshot_phrase.png)
+
+图 11 为查询扩展界面，输入 `heat transfer` 后，系统展示 WordNet 同义词映射（如 heat → hotness, warmth；transfer → transport, transferral），并使用扩展后的词项集合进行检索。
+
+![图 11 查询扩展界面](figures/screenshot_expanded.png)
+
+图 12 为词典浏览界面，按前缀 "aero" 筛选后展示相关词项，点击 "aerodynam"（DF=179）可查看其完整倒排记录表，包括文档 ID、词频和位置列表。
+
+![图 12 词典浏览与倒排记录表](figures/screenshot_index.png)
+
+图 13 为文档详情展开视图，展示文档的完整标题、作者、出处和正文内容，匹配词项高亮显示。
+
+![图 13 文档详情展开视图](figures/screenshot_detail.png)
 
 ---
 
