@@ -20,10 +20,11 @@ bun.lock
 .DS_Store
 
 # Course documents (private)
-*.docx
+# *.docx
 
 # Vite default assets
 frontend/src/assets/hero.png
 frontend/src/assets/vite.svg
 frontend/public/icons.svg
 frontend/public/favicon.svg
+*.~lock*
