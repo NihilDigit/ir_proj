@@ -1,198 +1,554 @@
-"""
-Build the final .docx report by:
-1. Using pandoc to convert report.md to docx (inherits template styles)
-2. Unpacking both template and pandoc output
-3. Merging: template cover/abstract + pandoc body content
-4. Repacking into final docx
-"""
-import subprocess
-import shutil
-import xml.etree.ElementTree as ET
+#!/usr/bin/env python3
+"""Build report.docx from report.md using python-docx with precise formatting."""
+
+import copy
+import os
+import re
 from pathlib import Path
-import sys
 
-SCRIPTS = Path("/home/spencer/.claude/plugins/marketplaces/anthropic-agent-skills/skills/docx/scripts/office")
+from docx import Document
+from docx.shared import Pt, Cm, Twips
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
 REPORT_DIR = Path(__file__).parent
-TEMPLATE = REPORT_DIR.parent / "课程设计报告模板.docx"
-REPORT_MD = REPORT_DIR / "report.md"
-OUTPUT = REPORT_DIR / "report.docx"
+MD_FILE = REPORT_DIR / "report.md"
+FIGURES_DIR = REPORT_DIR / "figures"
+TEMPLATE_FILE = REPORT_DIR.parent / "课程设计报告模板.docx"
+OUTPUT_FILE = REPORT_DIR / "report.docx"
 
-TMP = Path("/tmp/docx_build")
-TMP_TEMPLATE = TMP / "template"
-TMP_PANDOC = TMP / "pandoc"
-TMP_MERGED = TMP / "merged"
-
-ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-# Register all namespaces to prevent ns0/ns1 prefixes
-NAMESPACES = {
-    "wpc": "http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas",
-    "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
-    "o": "urn:schemas-microsoft-com:office:office",
-    "r": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
-    "m": "http://schemas.openxmlformats.org/officeDocument/2006/math",
-    "v": "urn:schemas-microsoft-com:vml",
-    "wp14": "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing",
-    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
-    "w10": "urn:schemas-microsoft-com:office:word",
-    "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
-    "w14": "http://schemas.microsoft.com/office/word/2010/wordml",
-    "w15": "http://schemas.microsoft.com/office/word/2012/wordml",
-    "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
-    "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
-    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
-    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
-    "a14": "http://schemas.microsoft.com/office/drawing/2010/main",
+# scienceplots figures use 12cm, everything else 15cm
+SCIENCEPLOTS_FIGURES = {
+    "zipf_distribution.png",
+    "df_distribution.png",
+    "doc_length_distribution.png",
+    "top20_terms.png",
 }
-for prefix, uri in NAMESPACES.items():
-    ET.register_namespace(prefix, uri)
 
 
-def get_para_text(p):
-    return "".join(t.text or "" for t in p.findall(".//w:t", ns)).strip()
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def _ensure_rPr(element):
+    rPr = element.find(qn("w:rPr"))
+    if rPr is None:
+        rPr = OxmlElement("w:rPr")
+        element.insert(0, rPr)
+    return rPr
 
 
-def run(cmd, **kwargs):
-    print(f"  $ {cmd}")
-    subprocess.run(cmd, shell=True, check=True, **kwargs)
+def _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体"):
+    rf = rPr.find(qn("w:rFonts"))
+    if rf is None:
+        rf = OxmlElement("w:rFonts")
+        rPr.insert(0, rf)
+    if ascii:
+        rf.set(qn("w:ascii"), ascii)
+        rf.set(qn("w:hAnsi"), ascii)
+    if east_asia:
+        rf.set(qn("w:eastAsia"), east_asia)
 
+
+def _set_sz(rPr, half_points):
+    """Set font size in half-points (e.g. 24 = 12pt)."""
+    for tag in ("w:sz", "w:szCs"):
+        el = rPr.find(qn(tag))
+        if el is None:
+            el = OxmlElement(tag)
+            rPr.append(el)
+        el.set(qn("w:val"), str(half_points))
+
+
+def _set_bold(rPr, val=True):
+    b = rPr.find(qn("w:b"))
+    if val:
+        if b is None:
+            b = OxmlElement("w:b")
+            rPr.append(b)
+    else:
+        if b is not None:
+            rPr.remove(b)
+
+
+def _set_italic(rPr, val=True):
+    i = rPr.find(qn("w:i"))
+    if val:
+        if i is None:
+            i = OxmlElement("w:i")
+            rPr.append(i)
+    else:
+        if i is not None:
+            rPr.remove(i)
+
+
+def _ensure_pPr(para):
+    pPr = para._element.find(qn("w:pPr"))
+    if pPr is None:
+        pPr = OxmlElement("w:pPr")
+        para._element.insert(0, pPr)
+    return pPr
+
+
+def _set_spacing(pPr, before=None, after=None, line=None):
+    sp = pPr.find(qn("w:spacing"))
+    if sp is None:
+        sp = OxmlElement("w:spacing")
+        pPr.append(sp)
+    if before is not None:
+        sp.set(qn("w:before"), str(before))
+    if after is not None:
+        sp.set(qn("w:after"), str(after))
+    if line is not None:
+        sp.set(qn("w:line"), str(line))
+        sp.set(qn("w:lineRule"), "auto")
+
+
+def _set_jc(pPr, val):
+    jc = pPr.find(qn("w:jc"))
+    if jc is None:
+        jc = OxmlElement("w:jc")
+        pPr.append(jc)
+    jc.set(qn("w:val"), val)
+
+
+def _set_indent(pPr, first_line_chars=None, first_line=None):
+    ind = pPr.find(qn("w:ind"))
+    if ind is None:
+        ind = OxmlElement("w:ind")
+        pPr.append(ind)
+    if first_line_chars is not None:
+        ind.set(qn("w:firstLineChars"), str(first_line_chars))
+    if first_line is not None:
+        ind.set(qn("w:firstLine"), str(first_line))
+
+
+def _clear_indent(pPr):
+    ind = pPr.find(qn("w:ind"))
+    if ind is not None:
+        pPr.remove(ind)
+
+
+def make_run(text, ascii="Times New Roman", east_asia="宋体", sz=24,
+             bold=False, italic=False):
+    """Create a w:r element with formatting."""
+    r = OxmlElement("w:r")
+    rPr = OxmlElement("w:rPr")
+    r.insert(0, rPr)
+    _set_rFonts(rPr, ascii=ascii, east_asia=east_asia)
+    _set_sz(rPr, sz)
+    if bold:
+        _set_bold(rPr)
+    if italic:
+        _set_italic(rPr)
+    t = OxmlElement("w:t")
+    t.set(qn("xml:space"), "preserve")
+    t.text = text
+    r.append(t)
+    return r
+
+
+# ── paragraph builders ───────────────────────────────────────────────────────
+
+def _add_inline_runs(para, text, default_sz=24, default_ascii="Times New Roman",
+                     default_east="宋体"):
+    """Parse inline markdown (**bold**, `code`, $math$) into runs."""
+    pattern = re.compile(r'(\*\*(.+?)\*\*|`([^`]+)`|\$([^$]+)\$)')
+    pos = 0
+    for m in pattern.finditer(text):
+        if m.start() > pos:
+            para._element.append(make_run(text[pos:m.start()], sz=default_sz,
+                                          ascii=default_ascii, east_asia=default_east))
+        if m.group(2):  # bold
+            para._element.append(make_run(m.group(2), sz=default_sz, bold=True,
+                                          ascii=default_ascii, east_asia=default_east))
+        elif m.group(3):  # inline code
+            para._element.append(make_run(m.group(3), sz=default_sz,
+                                          ascii="Courier New", east_asia=default_east))
+        elif m.group(4):  # inline math
+            para._element.append(make_run(m.group(4), sz=default_sz, italic=True,
+                                          ascii=default_ascii, east_asia=default_east))
+        pos = m.end()
+    if pos < len(text):
+        para._element.append(make_run(text[pos:], sz=default_sz,
+                                      ascii=default_ascii, east_asia=default_east))
+
+
+def add_body_para(doc, text):
+    """Normal body paragraph: 12pt, first-line indent 2 chars."""
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _set_indent(pPr, first_line_chars=200, first_line=480)
+    _add_inline_runs(p, text)
+    return p
+
+
+def add_unindented_para(doc, text):
+    """Paragraph without indent (list items etc.)."""
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _clear_indent(pPr)
+    _add_inline_runs(p, text)
+    return p
+
+
+def add_heading2(doc, text):
+    """H2: sz=32 (16pt), bold, 宋体+TNR, before=260 after=260 line=416, no indent."""
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _set_spacing(pPr, before=260, after=260, line=416)
+    _clear_indent(pPr)
+    p._element.append(make_run(text, sz=32, bold=True))
+    return p
+
+
+def add_heading3(doc, text):
+    """H3: sz=32 (16pt), bold, before=260 after=260 line=416, no indent."""
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _set_spacing(pPr, before=260, after=260, line=416)
+    _clear_indent(pPr)
+    p._element.append(make_run(text, sz=32, bold=True))
+    return p
+
+
+def add_heading4(doc, text):
+    """H4: sz=28 (14pt), bold, 宋体+TNR, before=280 after=290 line=376, no indent."""
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _set_spacing(pPr, before=280, after=290, line=376)
+    _clear_indent(pPr)
+    p._element.append(make_run(text, sz=28, bold=True))
+    return p
+
+
+def add_abstract_title(doc, text):
+    """Abstract title: sz=28 (14pt), bold, 黑体, centered."""
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _set_jc(pPr, "center")
+    _clear_indent(pPr)
+    p._element.append(make_run(text, sz=28, bold=True, east_asia="黑体"))
+    return p
+
+
+def add_figure(doc, img_path, caption):
+    """Insert image centered + caption below."""
+    filename = os.path.basename(img_path)
+    width = Cm(12) if filename in SCIENCEPLOTS_FIGURES else Cm(15)
+
+    # Image paragraph
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _set_jc(pPr, "center")
+    _clear_indent(pPr)
+    run = p.add_run()
+    run.add_picture(str(img_path), width=width)
+
+    # Caption paragraph: sz=21 (10.5pt), centered
+    cap = doc.add_paragraph()
+    cpPr = _ensure_pPr(cap)
+    _set_jc(cpPr, "center")
+    _clear_indent(cpPr)
+    cap._element.append(make_run(caption, sz=21))
+    return p
+
+
+def add_code_block(doc, lines):
+    """Code block: Courier New 9pt (sz=18), no indent, tight spacing."""
+    for line in lines:
+        p = doc.add_paragraph()
+        pPr = _ensure_pPr(p)
+        _clear_indent(pPr)
+        _set_spacing(pPr, before=0, after=0, line=260)
+        p._element.append(make_run(line if line else " ", sz=18,
+                                    ascii="Courier New", east_asia="宋体"))
+
+
+def add_math_block(doc, text):
+    """Display math: italic, centered, 12pt."""
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _set_jc(pPr, "center")
+    _clear_indent(pPr)
+    p._element.append(make_run(text, sz=24, italic=True))
+    return p
+
+
+def add_page_break(doc):
+    p = doc.add_paragraph()
+    pPr = _ensure_pPr(p)
+    _clear_indent(pPr)
+    r = OxmlElement("w:r")
+    br = OxmlElement("w:br")
+    br.set(qn("w:type"), "page")
+    r.append(br)
+    p._element.append(r)
+    return p
+
+
+# ── page / style setup ───────────────────────────────────────────────────────
+
+def setup_page(doc):
+    s = doc.sections[0]
+    s.page_width = Twips(11906)
+    s.page_height = Twips(16838)
+    s.top_margin = Twips(1701)
+    s.bottom_margin = Twips(1418)
+    s.left_margin = Twips(1588)
+    s.right_margin = Twips(1418)
+
+
+def setup_normal_style(doc):
+    """Normal: 12pt/sz24, 宋体+TNR, line=360/auto, jc=both."""
+    style_el = doc.styles["Normal"].element
+    # rPr
+    rPr = _ensure_rPr(style_el)
+    _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+    _set_sz(rPr, 24)
+    # pPr
+    pPr = style_el.find(qn("w:pPr"))
+    if pPr is None:
+        pPr = OxmlElement("w:pPr")
+        style_el.append(pPr)
+    _set_spacing(pPr, line=360)
+    _set_jc(pPr, "both")
+
+
+# ── markdown parser ──────────────────────────────────────────────────────────
+
+def parse_md(text):
+    """Return list of (type, content) tuples."""
+    lines = text.split("\n")
+    elems = []
+    i = 0
+    n = len(lines)
+
+    while i < n:
+        line = lines[i]
+
+        # blank
+        if not line.strip():
+            i += 1
+            continue
+
+        # hr – skip
+        if line.strip() == "---":
+            i += 1
+            continue
+
+        # page break
+        if line.strip() == "\\newpage":
+            elems.append(("pagebreak", None))
+            i += 1
+            continue
+
+        # headings (order matters: check #### before ### before ##)
+        if line.startswith("#### "):
+            elems.append(("h4", line[5:].strip()))
+            i += 1
+            continue
+        if line.startswith("### "):
+            elems.append(("h3", line[4:].strip()))
+            i += 1
+            continue
+        if line.startswith("## "):
+            title = line[3:].strip()
+            if title.startswith("摘") or title == "Abstract":
+                elems.append(("abstract_title", title))
+            else:
+                elems.append(("h2", title))
+            i += 1
+            continue
+
+        # figure
+        fm = re.match(r'^!\[(图\s*\d+\s+.+?)\]\((.+?)\)$', line)
+        if fm:
+            elems.append(("figure", (fm.group(1), fm.group(2))))
+            i += 1
+            continue
+
+        # code block
+        if line.strip().startswith("```"):
+            code = []
+            i += 1
+            while i < n and not lines[i].strip().startswith("```"):
+                code.append(lines[i])
+                i += 1
+            if i < n:
+                i += 1  # skip closing ```
+            elems.append(("code", code))
+            continue
+
+        # display math $$...$$
+        if line.strip().startswith("$$"):
+            content = line.strip()[2:]
+            if content.endswith("$$") and len(content) > 2:
+                elems.append(("math", content[:-2].strip()))
+                i += 1
+                continue
+            parts = []
+            if content.strip():
+                parts.append(content.strip())
+            i += 1
+            while i < n:
+                l = lines[i].strip()
+                if l.endswith("$$"):
+                    rest = l[:-2].strip()
+                    if rest:
+                        parts.append(rest)
+                    i += 1
+                    break
+                parts.append(l)
+                i += 1
+            elems.append(("math", " ".join(parts)))
+            continue
+
+        # list item
+        if re.match(r'^(\d+\.\s+|- )', line):
+            elems.append(("list_item", line.strip()))
+            i += 1
+            continue
+
+        # normal paragraph – collect consecutive non-special lines
+        para_lines = [line]
+        i += 1
+        while i < n:
+            nl = lines[i]
+            if not nl.strip():
+                break
+            if (nl.startswith("#") or nl.startswith("!") or nl.startswith("```") or
+                nl.strip().startswith("$$") or nl.strip() == "---" or
+                nl.strip() == "\\newpage" or re.match(r'^(\d+\.\s+|- )', nl)):
+                break
+            para_lines.append(nl)
+            i += 1
+        elems.append(("paragraph", " ".join(l.strip() for l in para_lines)))
+
+    return elems
+
+
+# ── cover page from template ─────────────────────────────────────────────────
+
+def insert_cover(doc, template_path):
+    """Copy first 14 paragraphs from template into doc, fix title + color, then page break."""
+    from docx.opc.part import Part
+    from docx.opc.package import OpcPackage
+    from docx.opc.packuri import PackURI
+
+    tmpl = Document(str(template_path))
+
+    # Collect template image blobs keyed by rId, create NEW image parts with
+    # unique names (prefixed "cover_") to avoid collisions with body images.
+    rid_map = {}  # old_rid -> new_rid
+    for rid, rel in tmpl.part.rels.items():
+        if "image" in rel.reltype:
+            blob = rel.target_part.blob
+            content_type = rel.target_part.content_type
+            # Create a new part with a unique name
+            old_name = rel.target_part.partname  # e.g. /word/media/image1.png
+            ext = os.path.splitext(str(old_name))[1]
+            # Find next free image number in doc
+            existing = {str(r.target_part.partname) for r2, r in doc.part.rels.items()
+                        if "image" in r.reltype} if doc.part.rels else set()
+            num = 100  # start at high number to avoid collisions
+            while f"/word/media/image{num}{ext}" in existing:
+                num += 1
+            new_partname = PackURI(f"/word/media/image{num}{ext}")
+            new_part = Part(new_partname, content_type, blob, doc.part.package)
+            new_rid = doc.part.relate_to(new_part, rel.reltype)
+            rid_map[rid] = new_rid
+
+    body = doc.element.body
+
+    for idx in range(14):
+        src = tmpl.paragraphs[idx]
+        elem = copy.deepcopy(src._element)
+
+        # Remap image rIds
+        for blip in elem.findall(".//" + qn("a:blip")):
+            old_rid = blip.get(qn("r:embed"))
+            if old_rid and old_rid in rid_map:
+                blip.set(qn("r:embed"), rid_map[old_rid])
+
+        # Paragraph 4: replace title placeholder, fix color
+        if idx == 4:
+            title_set = False
+            for r in elem.findall(qn("w:r")):
+                for t in r.findall(qn("w:t")):
+                    if t.text and ("此处" in t.text or "仿宋" in t.text or "题目" in t.text):
+                        if not title_set:
+                            t.text = "基于Cranfield数据集的信息检索系统"
+                            title_set = True
+                        else:
+                            t.text = ""
+                    elif t.text and t.text.strip() == "" and title_set:
+                        t.text = ""
+                rPr = r.find(qn("w:rPr"))
+                if rPr is not None:
+                    col = rPr.find(qn("w:color"))
+                    if col is not None and col.get(qn("w:val")) == "FF0000":
+                        col.set(qn("w:val"), "000000")
+
+        body.insert(idx, elem)
+
+    # Page break after cover (index 14)
+    pb = OxmlElement("w:p")
+    pb_r = OxmlElement("w:r")
+    pb_br = OxmlElement("w:br")
+    pb_br.set(qn("w:type"), "page")
+    pb_r.append(pb_br)
+    pb.append(pb_r)
+    body.insert(14, pb)
+
+
+# ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    # Clean up
-    if TMP.exists():
-        shutil.rmtree(TMP)
-    TMP.mkdir(parents=True)
+    md = MD_FILE.read_text("utf-8")
+    elements = parse_md(md)
+    print(f"Parsed {len(elements)} elements from markdown")
 
-    # Step 1: Generate pandoc docx with template styles
-    print("Step 1: pandoc md -> docx")
-    pandoc_docx = TMP / "pandoc.docx"
-    run(f'pandoc "{REPORT_MD}" -o "{pandoc_docx}" --reference-doc="{TEMPLATE}"')
+    doc = Document()
+    setup_page(doc)
+    setup_normal_style(doc)
 
-    # Step 2: Unpack both
-    print("Step 2: Unpack template and pandoc output")
-    run(f'python "{SCRIPTS}/unpack.py" "{TEMPLATE}" "{TMP_TEMPLATE}"')
-    run(f'python "{SCRIPTS}/unpack.py" "{pandoc_docx}" "{TMP_PANDOC}"')
+    # Remove default empty paragraph
+    if doc.paragraphs:
+        doc.element.body.remove(doc.paragraphs[0]._element)
 
-    # Step 3: Merge
-    print("Step 3: Merge cover + body")
+    # Build body
+    for etype, content in elements:
+        if etype == "pagebreak":
+            add_page_break(doc)
+        elif etype == "abstract_title":
+            add_abstract_title(doc, content)
+        elif etype == "h2":
+            add_heading2(doc, content)
+        elif etype == "h3":
+            add_heading3(doc, content)
+        elif etype == "h4":
+            add_heading4(doc, content)
+        elif etype == "figure":
+            caption, rel_path = content
+            img = REPORT_DIR / rel_path
+            if img.exists():
+                add_figure(doc, img, caption)
+            else:
+                print(f"  WARNING: missing image {img}")
+        elif etype == "code":
+            add_code_block(doc, content)
+        elif etype == "math":
+            add_math_block(doc, content)
+        elif etype == "list_item":
+            add_unindented_para(doc, content)
+        elif etype == "paragraph":
+            add_body_para(doc, content)
 
-    # Use pandoc output as base (it has our content with correct styles)
-    shutil.copytree(TMP_PANDOC, TMP_MERGED)
+    # Insert cover at beginning (after body is built, so Normal style isn't overridden)
+    insert_cover(doc, TEMPLATE_FILE)
 
-    # Copy template's media files (school logo etc.) to merged
-    template_media = TMP_TEMPLATE / "word" / "media"
-    merged_media = TMP_MERGED / "word" / "media"
-    merged_media.mkdir(exist_ok=True)
-    if template_media.exists():
-        for f in template_media.iterdir():
-            dest = merged_media / f.name
-            if not dest.exists():
-                shutil.copy2(f, dest)
-                print(f"  Copied media: {f.name}")
-
-    # Parse template document.xml - extract cover paragraphs (0-13)
-    template_tree = ET.parse(TMP_TEMPLATE / "word" / "document.xml")
-    template_root = template_tree.getroot()
-    template_body = template_root.find(".//w:body", ns)
-    template_paras = list(template_body)  # all children (paragraphs + sectPr)
-
-    # Cover = paragraphs 0..13 (before "摘 要")
-    cover_paras = []
-    for i, elem in enumerate(template_paras):
-        if elem.tag.endswith("}p"):
-            text = get_para_text(elem)
-            if "摘" in text and "要" in text and i > 5:
-                break
-        cover_paras.append(elem)
-
-    print(f"  Cover paragraphs: {len(cover_paras)}")
-
-    # Modify cover: replace placeholder title
-    for p in cover_paras:
-        text = get_para_text(p)
-        if "此处写自己的题目" in text:
-            for t in p.findall(".//w:t", ns):
-                if t.text and "此处写自己的题目" in t.text:
-                    t.text = "基于Cranfield数据集的信息检索系统"
-                if t.text and "仿宋小二加粗" in t.text:
-                    t.text = ""
-            # Change color from red to black
-            for rpr in p.findall(".//w:color", ns):
-                rpr.set(f"{{{ns['w']}}}val", "000000")
-
-    # Parse pandoc document.xml
-    pandoc_tree = ET.parse(TMP_MERGED / "word" / "document.xml")
-    pandoc_root = pandoc_tree.getroot()
-    pandoc_body = pandoc_root.find(".//w:body", ns)
-
-    # Get pandoc's sectPr (last element, page settings)
-    pandoc_children = list(pandoc_body)
-    sect_pr = pandoc_children[-1] if pandoc_children[-1].tag.endswith("}sectPr") else None
-
-    # Clear pandoc body
-    for child in list(pandoc_body):
-        pandoc_body.remove(child)
-
-    # Add cover paragraphs first
-    for p in cover_paras:
-        pandoc_body.append(p)
-
-    # Add a page break after cover
-    page_break_p = ET.SubElement(pandoc_body, f"{{{ns['w']}}}p")
-    page_break_r = ET.SubElement(page_break_p, f"{{{ns['w']}}}r")
-    ET.SubElement(page_break_r, f"{{{ns['w']}}}br", {f"{{{ns['w']}}}type": "page"})
-
-    # Add pandoc content (skip the title paragraph which duplicates our cover)
-    skip_first_heading = True
-    for child in pandoc_children:
-        if child.tag.endswith("}sectPr"):
-            continue
-        text = get_para_text(child) if child.tag.endswith("}p") else ""
-        # Skip the first H1 (report title - already on cover)
-        if skip_first_heading and "Cranfield" in text:
-            skip_first_heading = False
-            continue
-        pandoc_body.append(child)
-
-    # Add sectPr back (page settings)
-    if sect_pr is not None:
-        pandoc_body.append(sect_pr)
-
-    # Copy template's relationships for media
-    # (merge template rels into pandoc rels)
-    template_rels = TMP_TEMPLATE / "word" / "_rels" / "document.xml.rels"
-    merged_rels = TMP_MERGED / "word" / "_rels" / "document.xml.rels"
-    if template_rels.exists() and merged_rels.exists():
-        t_tree = ET.parse(template_rels)
-        m_tree = ET.parse(merged_rels)
-        t_root = t_tree.getroot()
-        m_root = m_tree.getroot()
-        existing_ids = {r.get("Id") for r in m_root}
-        for rel in t_root:
-            if rel.get("Id") not in existing_ids and "media" in (rel.get("Target") or ""):
-                m_root.append(rel)
-                print(f"  Added rel: {rel.get('Id')} -> {rel.get('Target')}")
-        m_tree.write(merged_rels, xml_declaration=True, encoding="UTF-8")
-
-    # Save merged document.xml
-    pandoc_tree.write(
-        TMP_MERGED / "word" / "document.xml",
-        xml_declaration=True,
-        encoding="UTF-8",
-    )
-
-    # Step 4: Repack using zipfile directly
-    print("Step 4: Pack final docx")
-    import zipfile
-    if OUTPUT.exists():
-        OUTPUT.unlink()
-    with zipfile.ZipFile(OUTPUT, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file_path in sorted(TMP_MERGED.rglob("*")):
-            if file_path.is_file():
-                arcname = file_path.relative_to(TMP_MERGED)
-                zf.write(file_path, arcname)
-
-    size = OUTPUT.stat().st_size / 1024 / 1024
-    print(f"\nDone! {OUTPUT} ({size:.1f} MB)")
+    doc.save(str(OUTPUT_FILE))
+    print(f"Saved → {OUTPUT_FILE}")
+    print(f"Size: {OUTPUT_FILE.stat().st_size / 1024:.0f} KB")
 
 
 if __name__ == "__main__":
