@@ -46,3 +46,6 @@ frontend/src/assets/hero.png
 frontend/src/assets/vite.svg
 frontend/public/icons.svg
 frontend/public/favicon.svg
+
+# Demo 视频（大二进制，不入 git）
+*.mp4
