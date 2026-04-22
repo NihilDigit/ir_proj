@@ -63,14 +63,20 @@ class SoundexCorrector:
         return code, candidates[:limit]
 
     def expand(self, query_terms: list[str], limit_per_term: int = 5) -> dict:
+        """为每个查询词提供 Soundex 候选词；检索只用 top-1 候选，其余候选仅供 UI 展示。
+
+        把 5 个候选全塞进 TF-IDF 会让拼写相近但语义无关的词（如 fail/fall 对 flow）
+        主导排序。只用 top-1 最像的候选，检索结果更聚焦。
+        """
         suggestion_map: dict[str, dict] = {}
-        all_terms: set[str] = set(t.lower() for t in query_terms)
+        search_terms: set[str] = set(t.lower() for t in query_terms)
         for term in query_terms:
             code, candidates = self.suggest(term, limit_per_term)
             suggestion_map[term] = {"code": code, "candidates": candidates}
-            all_terms.update(candidates)
+            if candidates:
+                search_terms.add(candidates[0])
         return {
             "original_terms": query_terms,
             "suggestion_map": suggestion_map,
-            "expanded_terms": sorted(all_terms),
+            "expanded_terms": sorted(search_terms),
         }
