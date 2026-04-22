@@ -46,7 +46,20 @@ class SoundexCorrector:
 
     def suggest(self, word: str, limit: int = 10) -> tuple[str, list[str]]:
         code = soundex(word)
-        candidates = sorted(self.code_to_terms.get(code, set()) - {word.lower()})
+        w = word.lower()
+        raw = self.code_to_terms.get(code, set()) - {w}
+
+        def _rank(cand: str) -> tuple:
+            # 优先：公共前缀最长 > 长度差最小 > 字母序
+            prefix = 0
+            for a, b in zip(w, cand):
+                if a == b:
+                    prefix += 1
+                else:
+                    break
+            return (-prefix, abs(len(cand) - len(w)), cand)
+
+        candidates = sorted(raw, key=_rank)
         return code, candidates[:limit]
 
     def expand(self, query_terms: list[str], limit_per_term: int = 5) -> dict:
