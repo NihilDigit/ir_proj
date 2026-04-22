@@ -403,10 +403,18 @@ class BooleanSearchEngine:
 
     def _parse_and(self, tokens, pos):
         left, pos = self._parse_not(tokens, pos)
-        while pos < len(tokens) and tokens[pos].upper() == "AND":
-            pos += 1
-            right, pos = self._parse_not(tokens, pos)
-            left = left & right  # 集合交集
+        while pos < len(tokens):
+            tok = tokens[pos].upper()
+            if tok == "AND":
+                pos += 1
+                right, pos = self._parse_not(tokens, pos)
+                left = left & right  # 集合交集
+            elif tok == "NOT":
+                # 允许隐式 AND：`A NOT B` 等价 `A AND NOT B`
+                right, pos = self._parse_not(tokens, pos)
+                left = left & right
+            else:
+                break
         return left, pos
 
     def _parse_not(self, tokens, pos):
