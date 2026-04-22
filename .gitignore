@@ -12,19 +12,37 @@ node_modules/
 frontend/dist/
 bun.lock
 
-# IDE
+# IDE / 编辑器
 .vscode/
 .idea/
+.claude/
 
 # OS
 .DS_Store
+*.~lock*
 
-# Course documents (private)
-# *.docx
+# 课程私有文档（示例 / 模板 / 参考）
+智能信息检索课程设计报告（示例）.docx
+智能信息检索课程设计报告（示例）.pdf
+智能信息检索课程设计要求.docx
+课程设计报告模板.docx
+IEEE-Editorial-Style-Manual-for-Authors.pdf
 
-# Vite default assets
+# 报告构建中间产物
+report/_pandoc_out.docx
+report/test_pandoc.pdf
+report/report.html
+report/*.bak
+
+# 报告产物（含手填学生信息，从源码重生成）
+report/report.docx
+report/report.pdf
+
+# 打包输出
+dist/
+
+# Vite 默认资源
 frontend/src/assets/hero.png
 frontend/src/assets/vite.svg
 frontend/public/icons.svg
 frontend/public/favicon.svg
-*.~lock*

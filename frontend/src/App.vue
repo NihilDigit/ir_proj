@@ -16,6 +16,7 @@
         <router-link to="/boolean">布尔检索</router-link>
         <router-link to="/phrase">短语查询</router-link>
         <router-link to="/expanded">查询扩展</router-link>
+        <router-link to="/soundex">发音矫正</router-link>
         <router-link to="/index">词典浏览</router-link>
       </nav>
     </header>

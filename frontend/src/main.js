@@ -4,6 +4,7 @@ import App from './App.vue'
 import BooleanSearch from './components/BooleanSearch.vue'
 import PhraseSearch from './components/PhraseSearch.vue'
 import ExpandedSearch from './components/ExpandedSearch.vue'
+import SoundexSearch from './components/SoundexSearch.vue'
 import IndexViewer from './components/IndexViewer.vue'
 import './style.css'
 
@@ -12,6 +13,7 @@ const routes = [
   { path: '/boolean', component: BooleanSearch },
   { path: '/phrase', component: PhraseSearch },
   { path: '/expanded', component: ExpandedSearch },
+  { path: '/soundex', component: SoundexSearch },
   { path: '/index', component: IndexViewer },
 ]
 

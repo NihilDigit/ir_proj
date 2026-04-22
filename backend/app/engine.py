@@ -7,6 +7,7 @@ from .core.boolean_search import BooleanSearchEngine
 from .core.phrase_search import PhraseSearchEngine
 from .core.tfidf import TFIDFRanker
 from .core.query_expansion import QueryExpander
+from .core.soundex import SoundexCorrector
 
 
 class SearchEngine:
@@ -30,3 +31,4 @@ class SearchEngine:
         self.phrase_engine = PhraseSearchEngine(self.index)
         self.tfidf_ranker = TFIDFRanker(self.index)
         self.expander = QueryExpander(self.index.preprocessor)
+        self.soundex_corrector = SoundexCorrector(self.index.index.keys())

@@ -2,15 +2,15 @@
 
 本课程设计基于经典的 Cranfield 信息检索测试集（1400 篇航空动力学论文摘要），设计并实现了一个完整的搜索引擎系统。系统后端采用 Python FastAPI 框架，前端采用 Vue 3 构建 Web 界面。在数据预处理阶段，对英文文档进行小写化、去标点、分词、去停用词和 Porter 词干提取，生成包含位置信息的倒排索引。系统实现了三种检索方式：基于递归下降解析器的布尔检索（支持 AND、OR、NOT 及括号嵌套）、基于位置信息的短语查询、以及基于 WordNet 的同义词查询扩展。所有检索结果均采用 TF-IDF 向量空间模型计算余弦相似度进行排序，并在 Web 界面中对匹配词项进行高亮显示。此外，系统提供了词典浏览和倒排记录表查看功能，便于直观理解索引结构。实验结果表明，系统能够有效地对 Cranfield 数据集进行多模式检索，验证了布尔模型、向量空间模型等经典信息检索理论的实际效果。
 
-**关键词：** 搜索引擎；倒排索引；布尔检索；短语查询；TF-IDF；余弦相似度；查询扩展
+**关键词：** 信息检索；倒排索引；TF-IDF；布尔检索；查询扩展
 
 \newpage
 
 ## Abstract
 
-This course project designs and implements a complete search engine system based on the classic Cranfield information retrieval test collection, which comprises 1,400 aerospace engineering paper abstracts, 225 standard queries, and 1,837 human-annotated relevance judgments. The backend is built with Python FastAPI, while the frontend is developed using Vue 3 as a single-page application. During the data preprocessing stage, English documents undergo lowercasing, punctuation removal, tokenization, stop word removal, and Porter stemming to produce a position-aware inverted index containing 4,682 unique terms. The system supports three retrieval modes: Boolean search based on a recursive descent parser (supporting AND, OR, NOT operators and nested parentheses), phrase search utilizing positional information for consecutive term matching, and query expansion leveraging the WordNet lexical database for synonym-based retrieval enhancement. All search results are ranked by cosine similarity computed from the TF-IDF vector space model, with matching terms highlighted in the web interface. Additionally, the system provides dictionary browsing and posting list inspection functionalities, enabling users to interactively explore the underlying index structure. Experimental results demonstrate that the system effectively performs multi-mode retrieval on the Cranfield dataset, validating the practical effectiveness of classical information retrieval theories including the Boolean model and the vector space model.
+This course project designs and implements a complete search engine system based on the classic Cranfield information retrieval test collection, which comprises 1,400 aerospace engineering paper abstracts, 225 standard queries, and 1,837 human-annotated relevance judgments. The backend is built with Python FastAPI, while the frontend is developed using Vue 3 as a single-page application. During the data preprocessing stage, English documents undergo lowercasing, punctuation removal, tokenization, stop word removal, and Porter stemming to produce a position-aware inverted index containing 4,682 unique terms. The system supports four retrieval modes: Boolean search based on a recursive descent parser (supporting AND, OR, NOT operators and nested parentheses), phrase search utilizing positional information for consecutive term matching, query expansion leveraging the WordNet lexical database for synonym-based retrieval enhancement, and Soundex phonetic correction for spelling-tolerant lookup. All search results are ranked by cosine similarity computed from the TF-IDF vector space model, with matching terms highlighted in the web interface. Additionally, the system provides dictionary browsing and posting list inspection functionalities, enabling users to interactively explore the underlying index structure. Experimental results demonstrate that the system effectively performs multi-mode retrieval on the Cranfield dataset, validating the practical effectiveness of classical information retrieval theories including the Boolean model and the vector space model.
 
-**Keywords:** Search Engine; Inverted Index; Boolean Retrieval; Phrase Query; TF-IDF; Cosine Similarity; Query Expansion
+**Keywords:** Information Retrieval; Inverted Index; TF-IDF; Boolean Retrieval; Query Expansion
 
 \newpage
 
@@ -18,9 +18,9 @@ This course project designs and implements a complete search engine system based
 
 ### 1.1 搜索引擎的定义
 
-搜索引擎是一种从大规模文档集合中根据用户查询检索相关信息的系统[1]。其核心功能包括文档的采集与存储、索引的构建、查询的处理以及结果的排序与呈现。现代搜索引擎通常包含爬虫（Crawler）、索引器（Indexer）、检索器（Retriever）和排序器（Ranker）等关键组件[2]。从广义上看，搜索引擎不仅包括面向互联网的通用搜索引擎（如 Google、百度），也包括面向特定领域的垂直搜索引擎（如学术搜索、电商搜索）以及企业内部的文档检索系统。无论应用场景如何变化，搜索引擎的核心目标始终是帮助用户从海量信息中快速、准确地找到所需内容。
+搜索引擎是一种从大规模文档集合中根据用户查询检索相关信息的系统[1]。其核心功能包括文档的采集与存储、索引的构建、查询的处理以及结果的排序与呈现。现代搜索引擎通常包含爬虫（Crawler）、索引器（Indexer）、检索器（Retriever）和排序器（Ranker）等关键组件[1]。从广义上看，搜索引擎不仅包括面向互联网的通用搜索引擎（如 Google、百度），也包括面向特定领域的垂直搜索引擎（如学术搜索、电商搜索）以及企业内部的文档检索系统。无论应用场景如何变化，搜索引擎的核心目标始终是帮助用户从海量信息中快速、准确地找到所需内容。
 
-信息检索（Information Retrieval, IR）作为搜索引擎的理论基础，研究如何从大规模非结构化数据（主要是文本）中找到满足用户信息需求的材料[10]。信息检索领域的研究涵盖文本表示、索引构建、查询处理、相关性排序等多个方面，为现代搜索引擎的发展提供了坚实的理论支撑。
+信息检索（Information Retrieval, IR）作为搜索引擎的理论基础，研究如何从大规模非结构化数据（主要是文本）中找到满足用户信息需求的材料[2]。信息检索领域的研究涵盖文本表示、索引构建、查询处理、相关性排序等多个方面，为现代搜索引擎的发展提供了坚实的理论支撑。
 
 ### 1.2 搜索引擎的国内外发展现状
 
@@ -28,7 +28,7 @@ This course project designs and implements a complete search engine system based
 
 国内搜索引擎市场以百度为主导，同时搜狗、360 搜索等也占有一定的市场份额，形成了多元竞争的格局。
 
-**百度搜索**是中国最大的搜索引擎，自 2000 年成立以来，在中文信息检索领域积累了深厚的技术储备[7]。百度在中文分词方面投入了大量研究，针对中文没有天然词边界的特点，开发了基于统计语言模型和深度学习的分词系统，能够准确处理歧义切分和新词识别等难题。在知识图谱方面，百度构建了大规模中文知识图谱，将实体识别、关系抽取和知识推理技术应用于搜索结果的增强展示，用户搜索特定实体时可以直接在搜索页面看到结构化的知识卡片。近年来，百度积极推进大语言模型在搜索中的应用，推出了基于文心大模型的 AI 搜索功能，能够对用户的复杂问题进行语义理解并生成综合性的回答。
+**百度搜索**是中国最大的搜索引擎，自 2000 年成立以来，在中文信息检索领域积累了深厚的技术储备[3]。百度在中文分词方面投入了大量研究，针对中文没有天然词边界的特点，开发了基于统计语言模型和深度学习的分词系统，能够准确处理歧义切分和新词识别等难题。在知识图谱方面，百度构建了大规模中文知识图谱，将实体识别、关系抽取和知识推理技术应用于搜索结果的增强展示，用户搜索特定实体时可以直接在搜索页面看到结构化的知识卡片。近年来，百度积极推进大语言模型在搜索中的应用，推出了基于文心大模型的 AI 搜索功能，能够对用户的复杂问题进行语义理解并生成综合性的回答。
 
 **搜狗搜索**的独特优势在于其与搜狗输入法的深度联动。搜狗输入法拥有庞大的用户基础，通过分析用户的输入行为和搜索习惯，搜狗能够更精准地理解用户意图。搜狗搜索在微信公众号内容的检索方面具有独家优势，能够索引和检索微信公众号的文章内容，这是其他搜索引擎难以覆盖的内容来源。此外，搜狗在语音搜索和图片搜索等多模态检索方面也进行了积极探索，将语音识别和图像理解技术融入搜索产品。
 
@@ -36,45 +36,43 @@ This course project designs and implements a complete search engine system based
 
 #### 1.2.2 国外搜索引擎
 
-国外搜索引擎的发展经历了从目录式检索到全文检索，再到语义理解的深刻变革。
+国外搜索引擎从目录式检索到全文检索，再到语义理解经历了深刻变革。
 
-**Google** 是全球最具影响力的搜索引擎，其成功始于 1998 年 Brin 和 Page 提出的 PageRank 算法[4]。PageRank 通过分析网页之间的链接关系来评估页面的重要性，将"网页被引用的次数和质量"作为排序的重要信号，这一创新彻底改变了搜索引擎的排序范式。在此基础上，Google 不断引入更先进的技术：2012 年推出知识图谱（Knowledge Graph），将搜索从关键词匹配提升到实体理解层面，用户搜索"爱因斯坦"时不仅能看到相关网页，还能看到包含生平、成就、相关人物等信息的知识面板；2019 年，Google 将 BERT 预训练语言模型应用于搜索查询的理解[6]，显著提升了对自然语言查询特别是长尾查询的理解能力，例如能够正确理解"到巴西的美国人需要签证吗"中"到"的方向性含义。2021 年，Google 进一步推出 MUM（Multitask Unified Model），支持跨语言、跨模态的信息理解，标志着搜索引擎向多模态智能方向迈进。
+**Google** 是全球最具影响力的搜索引擎，其成功始于 1998 年 Brin 和 Page 提出的 PageRank 算法[4]。PageRank 通过分析网页之间的链接关系来评估页面的重要性，将"网页被引用的次数和质量"作为排序的重要信号，这一创新彻底改变了搜索引擎的排序范式。在此基础上，Google 不断引入更先进的技术：2012 年推出知识图谱（Knowledge Graph），将搜索从关键词匹配提升到实体理解层面，用户搜索"爱因斯坦"时不仅能看到相关网页，还能看到包含生平、成就、相关人物等信息的知识面板；2019 年，Google 将 BERT 预训练语言模型应用于搜索查询的理解[5]，显著提升了对自然语言查询特别是长尾查询的理解能力，例如能够正确理解"到巴西的美国人需要签证吗"中"到"的方向性含义。2021 年，Google 进一步推出 MUM（Multitask Unified Model），支持跨语言、跨模态的信息理解，标志着搜索引擎向多模态智能方向迈进。
 
 **Bing** 是微软推出的搜索引擎，长期以来在全球市场占据第二的位置。Bing 在视觉搜索方面具有特色，提供了丰富的图片和视频搜索体验。2023 年，微软将 OpenAI 的 GPT-4 大语言模型整合到 Bing 搜索中，推出了"新 Bing"（Bing Chat），用户可以通过对话式交互获取搜索结果的智能摘要和直接答案。这一举措使 Bing 成为最早将生成式 AI 深度融入搜索体验的主流搜索引擎之一，推动了整个搜索行业向 AI 驱动的方向转型。Bing 的这一创新也迫使 Google 加速推出了自己的 AI 搜索产品（SGE/AI Overviews），引发了搜索引擎领域的新一轮技术竞赛。
 
-**Yahoo 搜索**是互联网早期最重要的搜索引擎之一[3]。Yahoo 最初采用人工编辑的目录分类方式组织网页信息，这种模式在互联网早期内容量有限时非常有效。随着网络内容的爆炸式增长，Yahoo 逐步转向自动化的全文检索技术。尽管在搜索市场的竞争中逐渐被 Google 超越，但 Yahoo 在信息检索领域仍有重要贡献，其研究部门在排序学习[5]、点击模型和用户行为分析等方面产出了大量有影响力的研究成果。
+**Yahoo 搜索**是互联网早期最重要的搜索引擎之一[6]。Yahoo 最初采用人工编辑的目录分类方式组织网页信息，这种模式在互联网早期内容量有限时非常有效。随着网络内容的爆炸式增长，Yahoo 逐步转向自动化的全文检索技术。尽管在搜索市场的竞争中逐渐被 Google 超越，但 Yahoo 在信息检索领域仍有重要贡献，其研究部门在排序学习[7]、点击模型和用户行为分析等方面产出了大量有影响力的研究成果。
 
 #### 1.2.3 搜索引擎发展趋势
 
-当前搜索引擎正经历前所未有的技术变革，多个方向的进展正在重塑搜索的未来形态。
+当前搜索引擎正经历前所未有的技术变革，多个方向的进展共同重塑着搜索引擎的未来形态。
 
 **密集向量检索**（Dense Retrieval）是近年来信息检索领域最重要的突破之一[8]。传统的检索方法依赖于词项的精确匹配，无法处理同义词和语义相关的表述。密集向量检索利用预训练语言模型将查询和文档编码为稠密向量，在向量空间中通过近似最近邻搜索实现语义级别的匹配。DPR（Dense Passage Retrieval）[8]、ColBERT 等方法在开放域问答等任务上展现了超越传统 BM25 的检索效果。然而，密集检索在计算效率、领域泛化和可解释性方面仍面临挑战，目前业界普遍采用稀疏检索与密集检索相结合的混合检索策略。
 
-**检索增强生成**（Retrieval-Augmented Generation, RAG）将信息检索与大语言模型的生成能力相结合[9]，成为当前最热门的技术方向之一。RAG 系统先通过检索模块从知识库中获取与用户问题相关的文档片段，再将这些片段作为上下文输入大语言模型进行回答生成。这种方法既利用了检索系统的精确性和时效性，又发挥了大语言模型的语言理解和生成能力，有效缓解了大模型的"幻觉"问题。RAG 技术正在被广泛应用于企业知识管理、智能客服、学术辅助等场景。
+**检索增强生成**（Retrieval-Augmented Generation, RAG）将信息检索与大语言模型的生成能力相结合[9]，成为当前最热门的技术方向之一。RAG 系统先通过检索模块从知识库中获取与用户问题相关的文档片段，再将这些片段作为上下文输入大语言模型进行回答生成。这种方法既利用了检索系统的精确性和时效性，又发挥了大语言模型的语言理解和生成能力，有效缓解了大模型的"幻觉"问题。RAG 已广泛应用于企业知识管理、智能客服、学术辅助等场景。
 
 **多模态搜索**的发展使搜索引擎不再局限于文本信息。现代搜索引擎越来越多地支持图像搜索（以图搜图）、语音搜索和视频搜索等多种模态的输入和输出。Google Lens、百度识图等产品允许用户通过拍照或上传图片进行搜索，背后依赖的是深度学习驱动的图像理解和跨模态匹配技术。未来的搜索引擎将实现文本、图像、音频、视频等多种模态信息的统一理解和检索。
 
 **AI 原生搜索引擎**的出现正在改变人们获取信息的方式。Perplexity AI、Google AI Overviews 等产品直接以对话形式回答用户问题，并提供信息来源的引用链接。这类系统将传统的"给出链接列表"模式转变为"直接给出答案"模式，代表了搜索引擎从"检索工具"向"知识助手"的转型。然而，AI 搜索也带来了信息准确性、内容版权和流量分配等新的挑战，如何平衡 AI 生成与原始来源的展示是行业面临的重要问题。
 
----
-
 ## 2 搜索引擎基础
 
 ### 2.1 搜索引擎的流程
 
-一个典型的搜索引擎系统包含以下流程[2]：
+一个典型的搜索引擎系统包含以下流程[1]：
 
 **文档采集**是搜索引擎的第一步，目标是获取待检索的文档集合。在 Web 搜索引擎中，这一步由网络爬虫（Web Crawler）完成，爬虫从种子 URL 出发，按照一定的策略（如广度优先、深度优先或基于优先级的策略）递归地发现和下载网页。在本系统中，文档采集对应于 Cranfield 数据集的 XML 文件解析，直接从结构化文件中提取文档内容。
 
 **文档预处理**是将原始文本转化为适合索引的规范化形式。预处理流水线通常包括分词（Tokenization）、大小写归一化（Case Folding）、去停用词（Stop Word Removal）和词干提取（Stemming）等步骤。预处理的质量直接影响后续索引构建和检索的效果，不同的预处理策略会导致完全不同的检索性能。例如，过度激进的词干提取可能将语义不同的词合并，而过于保守则会降低召回率。
 
-**索引构建**是搜索引擎性能的关键所在。预处理后的文档需要组织为高效的数据结构以支持快速检索。最常用的数据结构是倒排索引（Inverted Index），它将词项映射到包含该词项的文档列表，使得给定一个查询词项可以在接近常数时间内获取所有相关文档。索引构建还涉及压缩、分片和增量更新等工程优化问题。
+**索引构建**是搜索引擎性能的关键所在。预处理后的文档需要组织为高效的数据结构以支持快速检索。最常用的数据结构是倒排索引（Inverted Index），它将词项映射到包含该词项的文档列表，使得给定一个查询词项可以在接近常数时间内获取所有相关文档。索引构建还涉及压缩、分片与增量更新等工程优化问题的权衡。
 
 **查询处理**对用户输入的查询进行与文档相同的预处理（如分词、词干提取），确保查询词项能够匹配索引中的词项。此外，查询处理还可能包括查询改写、拼写纠正和查询扩展等增强手段，以提高检索的鲁棒性和召回率。
 
-**检索匹配**在索引中查找满足查询条件的文档。不同的检索模型（布尔模型、向量空间模型、概率模型等）定义了不同的匹配逻辑。布尔模型通过集合运算精确匹配，向量空间模型通过向量相似度计算软匹配，概率模型通过估计相关概率进行匹配。
+**检索匹配**在索引中查找满足查询条件的文档。不同的检索模型（布尔模型、向量空间模型、概率模型等）定义了不同的匹配逻辑。布尔模型通过集合运算精确匹配，向量空间模型通过相似度计算进行软匹配，概率模型则通过相关概率估计完成匹配。
 
-**结果排序**根据相关度对匹配文档进行排序，将最可能满足用户信息需求的文档排在前面。排序是搜索引擎中最核心的技术环节之一，从早期的 TF-IDF 到 BM25，再到基于机器学习的排序学习（Learning to Rank）[5]和基于深度学习的神经排序模型，排序技术经历了持续的演进。
+**结果排序**根据相关度对匹配文档进行排序，将最可能满足用户信息需求的文档排在前面。排序是搜索引擎中最核心的技术环节之一，从早期的 TF-IDF 到 BM25，再到基于机器学习的排序学习（Learning to Rank）[7]和基于深度学习的神经排序模型，排序技术经历了持续的演进。
 
 **结果呈现**将排序后的结果以用户友好的方式展示。现代搜索引擎的结果页面不仅包含文档链接和摘要，还可能包含知识面板、精选摘要、相关搜索等丰富的展示形式，帮助用户快速判断结果的相关性并获取所需信息。
 
@@ -82,23 +80,23 @@ This course project designs and implements a complete search engine system based
 
 #### 2.2.1 布尔模型
 
-布尔模型是最早的信息检索模型之一[10]。在该模型中，文档被表示为词项的集合，查询由词项通过布尔运算符（AND、OR、NOT）连接构成。文档要么与查询匹配（相关），要么不匹配（不相关），不存在部分匹配的概念。
+布尔模型是最早的信息检索模型之一[2]。在该模型中，文档被表示为词项的集合，查询由词项通过布尔运算符（AND、OR、NOT）连接构成。文档要么与查询匹配（相关），要么不匹配（不相关），不存在部分匹配的概念。
 
-布尔模型的优点是概念简单、实现高效，用户可以精确控制检索条件。其缺点是不支持部分匹配和结果排序，且布尔查询的构造对普通用户不够友好[10]。例如，用户需要理解 AND、OR、NOT 的集合语义才能构造有效的查询，而日常语言中"和""或"的含义往往与布尔逻辑不完全一致。
+布尔模型的优点是概念简单、实现高效，用户可以精确控制检索条件。其缺点是不支持部分匹配和结果排序，且布尔查询的构造对普通用户不够友好[2]。例如，用户需要理解 AND、OR、NOT 的集合语义才能构造有效的查询，而日常语言中"和""或"的含义往往与布尔逻辑不完全一致。
 
 形式化地，对于查询 $q = t_1 \text{ AND } t_2$，匹配文档集为：
 
 $$D(q) = D(t_1) \cap D(t_2)$$
 
-其中 $D(t_i)$ 为包含词项 $t_i$ 的文档集合。类似地，OR 运算对应集合并集 $D(t_1) \cup D(t_2)$，NOT 运算对应集合补集 $U - D(t_i)$（其中 $U$ 为全部文档集合）。
+其中 $D(t_i)$ 为包含词项 $t_i$ 的文档集合；OR 运算对应集合并集 $D(t_1) \cup D(t_2)$，NOT 运算对应集合补集 $U - D(t_i)$（$U$ 为全部文档集合）。
 
 尽管布尔模型不支持结果排序，但在实际应用中，常将布尔过滤与其他排序方法相结合。例如，先用布尔查询筛选出满足条件的文档子集，再用 TF-IDF 或 BM25 对该子集进行排序。这种混合策略兼顾了精确控制和排序需求，本系统正是采用了这种方案。
 
 #### 2.2.2 向量空间模型
 
-向量空间模型（Vector Space Model, VSM）由 Salton 等人于 1975 年提出[11]。该模型将文档和查询都表示为高维向量空间中的向量，每个维度对应一个词项，向量分量为该词项的权重。
+向量空间模型（Vector Space Model, VSM）由 Salton 等人于 1975 年提出[10]。该模型将文档和查询都表示为高维向量空间中的向量，每个维度对应一个词项，向量分量为该词项的权重。
 
-最常用的权重计算方案是 TF-IDF[12]：
+最常用的权重计算方案是 TF-IDF[11]：
 
 $$w_{t,d} = \text{tf}_{t,d} \times \text{idf}_t$$
 
@@ -122,17 +120,15 @@ $$\text{sim}(q, d) = \frac{\vec{q} \cdot \vec{d}}{|\vec{q}| \times |\vec{d}|} = 
 
 #### 2.2.3 概率模型
 
-概率检索模型基于概率排序原理（Probability Ranking Principle）[13]：按照文档与查询相关的概率降序排列，可以获得最优的检索效果。这一原理由 Robertson 于 1977 年正式提出，为后续概率检索模型的发展奠定了理论基础。
+概率检索模型基于概率排序原理（Probability Ranking Principle）[12]：按照文档与查询相关的概率降序排列，可以获得最优的检索效果。这一原理由 Robertson 于 1977 年正式提出，为后续概率检索模型的发展奠定了理论基础。
 
 概率模型的核心思想是估计给定查询 $q$ 时文档 $d$ 相关的概率 $P(R|d, q)$，其中 $R$ 表示相关事件。利用贝叶斯定理，可以将该概率转化为对词项在相关文档和不相关文档中出现概率的估计。
 
-BM25 是最经典的概率检索模型之一[14]，其评分函数为：
+BM25 是最经典的概率检索模型之一[13]，其评分函数为：
 
 $$\text{BM25}(q, d) = \sum_{t \in q} \text{idf}_t \cdot \frac{f_{t,d} \cdot (k_1 + 1)}{f_{t,d} + k_1 \cdot (1 - b + b \cdot \frac{|d|}{avgdl})}$$
 
-其中 $k_1$ 和 $b$ 为可调参数，$|d|$ 为文档长度，$avgdl$ 为平均文档长度。$k_1$ 控制词频饱和的速度（典型值 1.2），$b$ 控制文档长度归一化的程度（典型值 0.75）。BM25 至今仍是搜索引擎领域的强基线方法，在许多实际场景中表现优异。
-
----
+其中 $k_1$ 和 $b$ 为可调参数，$|d|$ 为文档长度，$avgdl$ 为平均文档长度。$k_1$ 控制词频饱和的速度（典型值 1.2），$b$ 控制文档长度归一化的程度（典型值 0.75）。BM25 至今仍是搜索引擎领域的强基线方法，在许多实际场景中仍有优异表现。
 
 ## 3 搜索引擎设计
 
@@ -140,24 +136,24 @@ $$\text{BM25}(q, d) = \sum_{t \in q} \text{idf}_t \cdot \frac{f_{t,d} \cdot (k_1
 
 本系统采用前后端分离架构，后端使用 Python FastAPI 提供 RESTful API，前端使用 Vue 3 构建单页应用。系统功能模块如图 1 所示。
 
-![图 1 系统功能模块图](figures/system_architecture.png)
+![图 1  系统功能模块图](figures/system_architecture.png){width=13cm}
 
 系统的主要功能模块包括：
 
-1. **文档集获取**：解析 Cranfield XML 格式数据集，提取文档、查询和相关性判断数据。
-2. **数据预处理**：对文档和查询文本进行分词、去停用词、Porter 词干提取等规范化处理。
-3. **索引构建**：构建包含位置信息的倒排记录表，支持高效的词项查找和短语匹配。
-4. **布尔检索**：基于递归下降解析器，支持 AND/OR/NOT 和括号的复合布尔查询。
-5. **短语查询**：利用倒排索引中的位置信息实现连续短语的精确匹配。
-6. **文档评分**：基于 TF-IDF 向量空间模型的余弦相似度排序，预计算文档模长提升效率。
-7. **查询扩展**：基于 WordNet 词汇数据库的同义词扩展，提高检索召回率。
-8. **Web 界面**：提供布尔检索、短语查询、查询扩展和索引浏览四个功能页面。
+1. **文档集获取**：解析 Cranfield XML 提取文档、查询与相关性判断。
+2. **数据预处理**：小写化、去标点、分词、去停用词、Porter 词干化。
+3. **索引构建**：构建带位置信息的倒排记录表，支持短语匹配。
+4. **布尔检索**：递归下降解析器支持 AND/OR/NOT 与括号嵌套。
+5. **短语查询**：利用位置信息实现连续短语的精确匹配。
+6. **文档评分**：TF-IDF 余弦相似度排序，预计算文档模长加速。
+7. **查询扩展**：基于 WordNet 的同义词扩展，提高检索召回率。
+8. **Web 界面**：布尔检索、短语查询、查询扩展、索引浏览四页。
 
-系统数据流为：Cranfield XML 数据文件经解析器提取后，由预处理器进行文本规范化，然后构建倒排索引。用户查询经相同的预处理流程后，由对应的检索引擎在索引中执行匹配，匹配结果经 TF-IDF 排序后通过 FastAPI 返回前端展示。
+系统数据流为：Cranfield XML 数据文件经解析器提取后，由预处理器进行文本规范化，然后构建倒排索引。用户查询经相同的预处理流程后，由对应的检索引擎在索引中执行匹配，匹配结果经 TF-IDF 排序后通过 FastAPI 返回前端渲染展示。
 
 ### 3.2 文档集获取
 
-本系统使用 Cranfield 数据集[15]，这是信息检索领域最经典的测试集之一，广泛用于检索算法的评估。该数据集由 Cleverdon 于 1960 年代在 Cranfield 航空学院创建，是信息检索实验评估方法论的奠基之作。数据集包含：
+本系统使用 Cranfield 数据集[14]，这是信息检索领域最经典的测试集之一，广泛用于检索算法的评估。该数据集由 Cleverdon 于 1960 年代在 Cranfield 航空学院创建，是信息检索实验评估方法论的奠基之作。数据集包含：
 
 - **文档集**：1400 篇航空动力学领域的论文摘要（`cran.all.1400.xml`）。
 - **查询集**：225 条标准查询（`cran.qry.xml`）。
@@ -184,15 +180,15 @@ def parse_documents(filepath: str) -> list[Document]:
     return docs
 ```
 
-其中 `_parse_wrapped` 函数负责读取文件内容并用 `<root>` 标签包裹后交给 `xml.etree.ElementTree` 解析。同样的解析方法也用于查询文件的解析。相关性判断文件采用空格分隔的纯文本格式，每行包含查询编号、文档编号和相关性等级。
+其中 `_parse_wrapped` 函数负责读取文件内容并用 `<root>` 标签包裹后交给 `xml.etree.ElementTree` 解析。同样的解析方法也用于查询文件的解析。相关性判断文件采用空格分隔的纯文本，每行包含查询编号、文档编号与相关性等级（0-4 分）。
 
 ### 3.3 数据预处理
 
 #### 3.3.1 预处理流程
 
-数据预处理的目标是将原始文本转化为规范化的词项序列，消除文本中的表面差异，使得语义相同或相近的表述能够被统一表示。预处理流程如图 2 所示。
+数据预处理的目标是将原始文本转化为规范化的词项序列，消除文本中的表面差异，使得语义相同或相近的表述能够被统一表示，整体流程如图 2 所示。
 
-![图 2 数据预处理流程](figures/preprocessing_flow.png)
+![图 2  数据预处理流程](figures/preprocessing_flow.png){width=13cm}
 
 处理流水线为：
 
@@ -240,29 +236,29 @@ class Preprocessor:
 
 **去标点（Punctuation Removal）** 使用正则表达式 `[^\w\s]` 将所有非字母数字、非空白的字符替换为空格。标点符号在大多数情况下不携带检索所需的语义信息，去除标点可以避免 "flow," 和 "flow" 被视为不同词项的问题。例如，原文中的 "high-speed" 经去标点后变为 "high speed" 两个独立的词项，"boundary-layer" 变为 "boundary layer"。这种处理方式在大多数场景下是合理的，但可能导致连字符词汇的语义损失。
 
-**分词（Tokenization）** 基于空白字符（空格、制表符、换行符等）将文本分割为独立的词元（Token）序列。英文文本天然以空白字符分隔单词，因此基于空白字符的分词方法简单而高效。分词后，每个词元被分配一个从 0 开始的位置编号，这些位置编号在后续的短语查询中起着关键作用。例如，文本 "the flow over a wing" 分词后得到位置序列 [(the, 0), (flow, 1), (over, 2), (a, 3), (wing, 4)]。
+**分词（Tokenization）** 基于空白字符（空格、制表符、换行符等）将文本分割为独立的词元（Token）序列。英文文本天然以空白字符分隔单词，因此基于空白字符的分词方法简单而高效。分词后，每个词元被分配一个从 0 开始的位置编号，这些位置编号在后续的短语查询中起着关键作用。例如 "the flow over a wing" 分词得到 `[(the,0), (flow,1), (over,2), (a,3), (wing,4)]` 这样的位置序列。
 
 **去停用词（Stop Word Removal）** 使用 NLTK 提供的 198 个英文停用词表过滤高频功能词。停用词如 "the""is""and""of" 等在几乎所有文档中都频繁出现，对区分文档的主题内容没有帮助，反而会增大索引体积和计算开销。去停用词后的一个关键设计是：**词项的位置编号保持原始值不重新编号**。以上面的例子为例，去停用词后得到 [(flow, 1), (wing, 4)]，而非重新编号为 [(flow, 0), (wing, 1)]。这是因为短语查询需要通过位置差值判断词项是否在原文中连续出现，重新编号会破坏这一位置关系。
 
-**Porter 词干提取（Porter Stemming）** 使用 Porter 词干提取算法将词汇还原为词干形式。词干提取的目的是将同一词的不同形态变体（如 "compute""computing""computed""computation"）映射到同一词干（"comput"），从而提高检索的召回率。Porter 算法是最经典的英文词干提取算法，通过一系列规则去除词缀（如 "-ing""-tion""-ed""-s" 等）。例如，"aerodynamics" 经 Porter 词干提取后变为 "aerodynam"，"boundary" 变为 "boundari"，"experimental" 变为 "experiment"。词干提取的一个重要特性是幂等性：对已经提取过词干的词再次提取，结果不变。这保证了索引构建和查询处理即使在某些边界情况下多次执行词干提取也不会导致不一致。
+**Porter 词干提取（Porter Stemming）** 使用 Porter 词干提取算法[15]将词汇还原为词干形式。词干提取的目的是将同一词的不同形态变体（如 "compute""computing""computed""computation"）映射到同一词干（"comput"），从而提高检索的召回率。Porter 算法是最经典的英文词干提取算法，通过一系列规则去除词缀（如 "-ing""-tion""-ed""-s" 等）。例如，"aerodynamics" 经 Porter 词干提取后变为 "aerodynam"，"boundary" 变为 "boundari"，"experimental" 变为 "experiment"。词干提取的一个重要特性是幂等性：对已经提取过词干的词再次提取，结果不变。这保证了索引构建和查询处理即使在某些边界情况下多次执行词干提取也不会导致不一致。
 
 #### 3.3.4 预处理结果分析
 
 经预处理后，数据集包含 4682 个唯一词项，文档平均长度为 100.7 个词项。图 3 展示了词频的 Zipf 分布，图 4 展示了文档频率的分布，图 5 展示了文档长度的分布，图 6 展示了出现频率最高的 20 个词项。
 
-![图 3 词频与排名的 Zipf 分布](figures/zipf_distribution.png)
+![图 3  词频与排名的 Zipf 分布](figures/zipf_distribution.png){width=6.5cm}
 
-![图 4 文档频率分布](figures/df_distribution.png)
+![图 4  文档频率分布](figures/df_distribution.png){width=6.5cm}
 
-![图 5 文档长度分布](figures/doc_length_distribution.png)
+![图 5  文档长度分布](figures/doc_length_distribution.png){width=6.5cm}
 
-![图 6 出现频率最高的 20 个词项](figures/top20_terms.png)
+![图 6  出现频率最高的 20 个词项](figures/top20_terms.png){width=6.5cm}
 
-从图 3 可以看出，词频分布近似符合 Zipf 定律（Zipf's Law），即词项的频率与其频率排名成反比。在双对数坐标下，数据点近似呈线性分布，这与 Zipf 定律的预测一致。Zipf 定律揭示了自然语言文本中词项分布的普遍规律：少量词项具有极高的频率，而大量词项仅出现一两次。
+从图 3 可以看出，词频分布近似符合 Zipf 定律（Zipf's Law）[16]，即词项的频率与其频率排名成反比。在双对数坐标下，数据点近似呈线性分布，这与 Zipf 定律的预测一致。Zipf 定律揭示了自然语言文本中词项分布的普遍规律：少量词项具有极高的频率，而大量词项仅出现一两次。
 
 从图 4 可以看出，绝大多数词项的文档频率集中在低值区间（中位数 DF = 2），最大 DF 为 730（约占全部 1400 篇文档的 52%）。这说明大多数词项具有较好的区分度，仅出现在少数文档中，而少数高频词项（如通用的学术术语）分布广泛。高 DF 词项的 IDF 值较低，在 TF-IDF 排序中权重被自然压低。
 
-从图 5 可以看出，文档长度近似呈正态分布，平均长度约 100.7 个词项，大多数文档长度集中在 50-150 个词项的范围内，这与学术论文摘要的典型长度相符。
+从图 5 可以看出，文档长度近似呈正态分布，平均长度约 100.7 个词项，大多数文档长度集中在 50-150 个词项区间，这与学术论文摘要的典型篇幅吻合。
 
 从图 6 可以看出，出现频率最高的 20 个词项主要是航空动力学领域的常见术语（如 "flow""pressur""number""boundari""layer" 等），反映了 Cranfield 数据集的学科特征。
 
@@ -270,7 +266,7 @@ class Preprocessor:
 
 #### 3.4.1 倒排索引功能
 
-倒排索引是搜索引擎的核心数据结构[10]。传统的倒排索引将每个词项映射到包含该词项的文档 ID 列表（称为倒排记录表，Posting List）。本系统构建的倒排索引在此基础上进一步记录词项在文档中的具体位置（Position），形成位置倒排索引（Positional Inverted Index），以支持短语查询和近邻查询。
+倒排索引是搜索引擎的核心数据结构[2]。传统的倒排索引将每个词项映射到包含该词项的文档 ID 列表（称为倒排记录表，Posting List）。本系统构建的倒排索引在此基础上进一步记录词项在文档中的具体位置（Position），形成位置倒排索引（Positional Inverted Index），以支持短语查询和近邻查询。
 
 索引的数据结构为：
 
@@ -295,7 +291,7 @@ inverted_index: dict[str, dict[int, list[int]]]
 
 倒排索引的构建流程如图 7 所示。系统遍历每篇文档，将标题和正文合并后送入预处理器，对预处理输出的每个 (词项, 位置) 对，将其插入到倒排索引的对应条目中。构建完成后，索引通过 Python `pickle` 序列化缓存到磁盘文件 `index.pkl`，后续启动时直接加载缓存，避免重复构建。
 
-![图 7 倒排索引构建流程](figures/index_construction_flow.png)
+![图 7  倒排索引构建流程](figures/index_construction_flow.png){width=13cm}
 
 #### 3.4.3 构建核心代码
 
@@ -341,7 +337,7 @@ class InvertedIndex:
 - **词典规模**：4682 个唯一词项（词干化后）。
 - **文档总数**：1400 篇文档。
 - **最大文档频率**：730（最高频词项出现在超过一半的文档中）。
-- **中位文档频率**：2（多数词项仅出现在 1-2 篇文档中，具有高区分度）。
+- **中位文档频率**：2（多数词项仅出现在 1-2 篇文档，区分度高）。
 - **平均文档长度**：100.7 个词项。
 
 系统提供了词典浏览 API（`GET /api/index/dictionary`），支持分页查看所有词项及其文档频率和总词频。用户还可以通过倒排记录表查看 API（`GET /api/index/postings/{term}`）查看任意词项的完整倒排记录，包括文档 ID、词频和位置列表。这些功能有助于理解索引结构和调试检索问题。
@@ -356,7 +352,7 @@ class InvertedIndex:
 
 **OR 运算符**执行两个词项文档集的并集操作，返回包含任一词项的文档。例如，查询 `aerodynamics OR hydrodynamics` 返回包含 "aerodynamics" 或 "hydrodynamics"（或两者都包含）的文档。OR 运算适用于用户希望扩大检索范围的场景，特别是当查询包含同义词或相关概念时。
 
-**NOT 运算符**执行集合的补集操作，排除包含指定词项的文档。例如，查询 `aerodynamics AND NOT flutter` 返回包含 "aerodynamics" 但不包含 "flutter" 的文档。NOT 运算允许用户排除不感兴趣的主题，在结果集较大时特别有用。需要注意的是，NOT 运算在本系统中是相对于全部 1400 篇文档的全集进行补集计算。
+**NOT 运算符**执行集合的补集操作，排除包含指定词项的文档。例如，查询 `aerodynamics AND NOT flutter` 返回包含 "aerodynamics" 但不包含 "flutter" 的文档。NOT 运算允许用户排除不感兴趣的主题，在结果集较大时特别有用。需要注意的是，NOT 运算在本系统中相对于全部 1400 篇文档的全集作补集。
 
 **括号嵌套**允许用户控制运算符的优先级。例如，查询 `(aerodynamics OR hydrodynamics) AND wing` 先计算括号内的 OR 并集，再与 "wing" 取交集。没有括号时，系统按照 NOT > AND > OR 的默认优先级（与标准布尔逻辑一致）解析查询。括号嵌套可以任意层深，支持复杂的查询逻辑构造。
 
@@ -364,7 +360,7 @@ class InvertedIndex:
 
 布尔检索的完整流程如图 8 所示。系统首先对查询字符串进行词法分析（分离运算符、括号和词项），然后由递归下降解析器按语法规则构造解析树，最后自底向上求值，对叶节点的词项查找倒排记录表获取文档集，对内部节点执行集合运算。
 
-![图 8 布尔检索流程](figures/boolean_search_flow.png)
+![图 8  布尔检索流程](figures/boolean_search_flow.png){width=13cm}
 
 解析器的语法定义为：
 
@@ -450,12 +446,12 @@ class BooleanSearchEngine:
 
 短语查询的完整流程如图 9 所示。
 
-![图 9 短语查询流程](figures/phrase_search_flow.png)
+![图 9  短语查询流程](figures/phrase_search_flow.png){width=13cm}
 
 算法步骤：
 
 1. 对短语进行与索引构建相同的预处理（小写化、去标点、分词、去停用词、Porter 词干提取）。
-2. 获取每个词项的倒排记录表。如果任一词项不存在于索引中，直接返回空结果。
+2. 获取每个词项的倒排记录表。若任一词项不在索引中，则直接返回空集。
 3. 取所有词项倒排记录表的文档集交集，得到候选文档集。
 4. 在每篇候选文档中，检查第一个词项的每个出现位置是否能作为短语的起始位置（即后续词项是否依次出现在连续位置）。
 5. 通过位置检查的文档加入结果集，最终经 TF-IDF 排序后返回。
@@ -607,33 +603,23 @@ def _rank(self, query_terms, doc_ids, top_k):
 
 ### 3.7 查询扩展
 
-查询扩展通过添加与原始查询词语义相关的词项来提高检索的召回率[10]。用户输入的查询通常很短（Cranfield 查询集的平均查询长度约为 8 个词），可能无法涵盖文档中表达相同概念的所有词汇。查询扩展旨在弥补这种"词汇鸿沟"（Vocabulary Mismatch），使查询能够匹配到使用不同措辞但语义相关的文档。
+查询扩展通过添加与原始查询词语义相关或形式相近的词项来提高检索的召回率[2]。本系统实现了两类互补的扩展方法：基于 WordNet 的同义词查询用于弥合"词汇鸿沟"（Vocabulary Mismatch），而基于 Soundex 的发音矫正用于在用户拼写错误时仍能找到发音相近的词典词，兼顾语义与字符两个维度的鲁棒性。
 
-#### 3.7.1 功能实现
+#### 3.7.1 同义词查询（WordNet）
 
-本系统基于 WordNet 词汇数据库实现同义词扩展。WordNet 是普林斯顿大学开发的大规模英语词汇数据库，将英语词汇组织为同义词集（Synsets），每个同义词集表示一个不同的概念。
-
-对于查询中的每个词项，系统执行以下步骤：
+**功能实现。** 本系统基于 WordNet 词汇数据库[17]实现同义词扩展。WordNet 是普林斯顿大学开发的大规模英语词汇数据库，将英语词汇组织为同义词集（Synsets），每个同义词集表示一个不同的概念。对于查询中的每个词项，系统执行以下步骤：
 
 1. 在 WordNet 中查找该词项的所有同义词集。
 2. 从每个同义词集中提取词元（Lemma），即该概念的所有同义表达。
 3. 过滤掉包含空格的多词表达（如 "heat up"）和与原词相同的词元。
-4. 对候选同义词进行词干提取，过滤掉词干与原词相同的同义词（避免冗余）。
+4. 对候选同义词进行词干提取，过滤掉与原词同词干的候选以避免冗余。
 5. 最多保留用户指定数量的同义词（默认 3 个）。
 
-示例：查询 "heat transfer" 的扩展结果为：
-- heat → warmth, hotness, passion
-- transfer → transferral, transport, conveyance
+示例：查询 "heat transfer" 的扩展结果为 heat → warmth, hotness, passion；transfer → transferral, transport, conveyance。扩展后的所有词项经词干提取后共同参与 TF-IDF 检索。值得注意的是，查询扩展具有双刃性——"heat" 的同义词 "passion" 在航空动力学领域并不相关，可能引入噪声。在实际应用中，可以通过伪相关反馈（Pseudo Relevance Feedback）或基于领域词向量的相似度过滤来缓解语义漂移问题。
 
-扩展后的所有词项（包括原始词和同义词）经词干提取后共同参与 TF-IDF 检索。值得注意的是，查询扩展具有双刃性——"heat" 的同义词 "passion" 在航空动力学领域并不相关，可能引入噪声。在实际应用中，可以通过伪相关反馈（Pseudo Relevance Feedback）或基于领域词向量的相似度过滤来缓解语义漂移问题。
+**流程与核心代码。** 同义词查询的流程如图 10 所示。
 
-#### 3.7.2 流程图
-
-查询扩展的流程如图 10 所示。
-
-![图 10 查询扩展流程](figures/query_expansion_flow.png)
-
-#### 3.7.3 核心代码
+![图 10  同义词查询流程](figures/query_expansion_flow.png){width=13cm}
 
 ```python
 class QueryExpander:
@@ -662,7 +648,6 @@ class QueryExpander:
         expanded_stemmed = list({
             self.preprocessor.stemmer.stem(t) for t in all_terms
         })
-
         return {
             "original_terms": query_terms,
             "expanded_terms": sorted(all_terms),
@@ -671,13 +656,80 @@ class QueryExpander:
         }
 ```
 
-`expand` 方法返回一个字典，包含原始词项、所有扩展后的词项、经词干提取后的词项列表以及每个原始词到其同义词的映射关系。其中 `expansion_map` 用于前端展示同义词映射，`expanded_stemmed` 用于实际的 TF-IDF 检索。通过对所有扩展词项统一进行词干提取并去重，避免了同义词在词干化后与原词重复的问题。
+`expand` 方法返回一个字典，包含原始词项、所有扩展后的词项、经词干提取后的词项列表以及每个原始词到其同义词的映射关系。其中 `expansion_map` 用于前端展示同义词映射，`expanded_stemmed` 用于实际的 TF-IDF 检索。通过对所有扩展词项统一进行词干化并去重，避免同义词在词干提取后与原词产生重复。
+
+**运行界面。** 图 11 为同义词查询的运行界面。输入 `heat transfer`，系统展示每个词项的 WordNet 同义词映射，并使用扩展后的词项集合进行检索。
+
+![图 11  同义词查询运行界面](figures/ui_expanded_result.png){width=13cm}
+
+#### 3.7.2 发音矫正（Soundex）
+
+**功能实现。** WordNet 扩展解决语义层面的"词汇鸿沟"，但当用户拼写错误时（例如把 `boundary` 输成 `bounderi`），系统仍无法匹配到正确的索引词项。Soundex 是 Russell 和 Odell 在 1918 年和 1922 年的美国专利中提出的英语发音哈希算法[18]，它把拼写不同但发音相近的词映射到同一个 4 字符编码（首字母 + 3 位数字），从而将拼写纠错问题转化为一次基于编码的等价类查找。编码规则如下：
+
+1. 保留单词首字母（大写）。
+2. 将后续辅音按发音映射为数字：BFPV→1；CGJKQSXZ→2；DT→3；L→4；MN→5；R→6。
+3. 丢弃元音（AEIOUY）和 H、W（但它们作为分隔符防止相邻相同数字被错误合并）。
+4. 合并相邻重复的数字。
+5. 截断或用 0 填充至 "首字母 + 3 位数字"（如 `boundari` → `B536`，`bounderi` → `B536`，`Robert` 与 `Rupert` 均为 `R163`）。
+
+系统在索引构建完成后对**词典中所有词项**预先计算 Soundex 编码并建立 `code → terms` 倒排映射。查询时，将用户输入的每个词编码后在该映射中查找，返回发音相近的候选词，连同原词一起作为扩展查询参与 TF-IDF 排序。
+
+**流程与核心代码。** Soundex 发音矫正的流程如图 12 所示。
+
+![图 12  Soundex 发音矫正流程](figures/soundex_flow.png){width=13cm}
+
+```python
+_CODE_MAP = {
+    **dict.fromkeys("bfpv", "1"),
+    **dict.fromkeys("cgjkqsxz", "2"),
+    **dict.fromkeys("dt", "3"),
+    "l": "4",
+    **dict.fromkeys("mn", "5"),
+    "r": "6",
+}
+
+def soundex(word: str) -> str:
+    if not word:
+        return ""
+    word = word.lower()
+    first = word[0].upper()
+    digits, prev = [], _CODE_MAP.get(word[0], "")
+    for ch in word[1:]:
+        if ch in "hw":
+            continue
+        d = _CODE_MAP.get(ch, "")
+        if d:
+            if d != prev:
+                digits.append(d)
+            prev = d
+        else:
+            prev = ""
+    return (first + "".join(digits) + "000")[:4]
+
+
+class SoundexCorrector:
+    def __init__(self, dictionary_terms):
+        self.code_to_terms = defaultdict(set)
+        for term in dictionary_terms:
+            self.code_to_terms[soundex(term)].add(term)
+
+    def suggest(self, word, limit=10):
+        code = soundex(word)
+        candidates = sorted(self.code_to_terms.get(code, set()) - {word.lower()})
+        return code, candidates[:limit]
+```
+
+`SoundexCorrector` 在初始化时接收倒排索引的全部词项（4,682 个），为每个词计算 Soundex 编码并构建反向映射。查询阶段的单次 `suggest` 调用仅需 O(1) 的哈希查找，性能开销可忽略。由 `_CODE_MAP` 中的 `h` 与 `w` 故意缺席可见：该实现**跳过**这两个字母而不是将它们视作分隔符，对应标准 Soundex 的常见简化版——对英文普通文本的纠错效果几乎没有损失。
+
+**运行界面。** 图 13 为发音矫正的运行界面。输入 `bounderi flo`（两个都是拼写错误），系统显示 `bounderi → B536 → boundari`（成功纠回 "boundari"）和 `flo → F400 → fail, fale, fall, feel, fell`（发音相近但不全相关，体现了 Soundex 召回为主的特点），再用扩展后的词集参与 TF-IDF 排序得到 50 条排名靠前的检索结果。
+
+![图 13  发音矫正运行界面](figures/ui_soundex_result.png){width=13cm}
 
 ### 3.8 Web 界面设计
 
 #### 3.8.1 前后端架构
 
-系统采用前后端分离的架构设计，将检索逻辑和界面展示解耦为两个独立的服务。
+系统采用前后端分离设计，把检索逻辑与界面展示解耦为两个独立的服务模块。
 
 **后端**基于 Python FastAPI 框架构建，FastAPI 是一个现代的、高性能的 Web 框架，支持自动 API 文档生成（OpenAPI/Swagger）和请求/响应数据的自动验证（基于 Pydantic 模型）。后端通过 FastAPI 的 lifespan 机制在启动时自动下载所需的 NLTK 数据（停用词表和 WordNet 词汇库），并初始化搜索引擎（构建或加载倒排索引、初始化各检索引擎和排序器）。CORS 中间件配置允许跨域请求，使前端开发服务器能够直接调用后端 API。
 
@@ -721,29 +773,19 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 
 #### 3.8.3 界面展示
 
-系统前端包含四个主要页面，每个页面对应一种功能。
+系统前端包含五个主要页面，布尔检索、短语查询、词典浏览的界面如图 14–16 所示（同义词查询、发音矫正的界面已在 §3.7 内展示）。
 
-图 11 为布尔检索界面，用户输入 `aerodynamics AND wing NOT flutter`，系统返回 70 条结果，匹配词项以黄色高亮显示，结果按余弦相似度降序排列。界面顶部提供 AND、OR、NOT 三个运算符辅助按钮，用户点击即可在查询输入框中插入对应运算符，降低了布尔查询的构造门槛。
+图 14 为布尔检索界面，输入 `aerodynamics AND wing NOT flutter`，系统返回 50 条排序结果，匹配词项以黄色高亮显示，结果按余弦相似度降序排列。界面顶部提供 AND、OR、NOT 三个运算符辅助按钮，用户点击即可在查询输入框中插入对应运算符，降低了布尔查询的构造门槛。
 
-![图 11 布尔检索界面](figures/screenshot_boolean.png)
+![图 14  布尔检索界面](figures/ui_boolean_result.png){width=13cm}
 
-图 12 为短语查询界面，查询 `boundary layer`，系统通过位置信息匹配到 367 篇包含该短语的文档。结果同样按 TF-IDF 余弦相似度排序，匹配词项高亮显示。
+图 15 为短语查询界面，输入短语 `boundary layer`，系统通过位置信息匹配到含该连续短语的文档集合，再按 TF-IDF 余弦相似度排序。
 
-![图 12 短语查询界面](figures/screenshot_phrase.png)
+![图 15  短语查询界面](figures/ui_phrase_result.png){width=13cm}
 
-图 13 为查询扩展界面，输入 `heat transfer` 后，系统展示 WordNet 同义词映射（如 heat → hotness, warmth；transfer → transport, transferral），并使用扩展后的词项集合进行检索。用户可以通过滑块调节每个词项的最大同义词数量。
+图 16 为词典浏览界面，按前缀过滤可查看相关词项，点击词项可展开其完整倒排记录表，包括文档 ID、词频和位置列表。分页控件允许用户完整浏览全部词项。
 
-![图 13 查询扩展界面](figures/screenshot_expanded.png)
-
-图 14 为词典浏览界面，按前缀 "aero" 筛选后展示相关词项，点击 "aerodynam"（DF=179）可查看其完整倒排记录表，包括文档 ID、词频和位置列表。分页控件允许用户浏览全部 4682 个词项。
-
-![图 14 词典浏览与倒排记录表](figures/screenshot_index.png)
-
-图 15 为文档详情展开视图，展示文档的完整标题、作者、出处和正文内容，匹配词项高亮显示。用户可以在搜索结果列表中点击任意结果展开查看完整信息。
-
-![图 15 文档详情展开视图](figures/screenshot_detail.png)
-
----
+![图 16  词典浏览与倒排记录表](figures/ui_index_viewer.png){width=13cm}
 
 ## 4 课程设计体会
 
@@ -757,40 +799,46 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 
 **查询扩展的双刃性。** 基于 WordNet 的同义词扩展可以提高检索的召回率，帮助用户找到使用不同措辞表达相同概念的文档。然而，同义词扩展也可能引入语义漂移。例如，"heat" 在物理学语境中指"热量"，但 WordNet 返回的同义词 "passion"（热情）在航空动力学领域完全不相关。这一问题的根源在于 WordNet 是通用词汇数据库，不区分领域。在实际的领域搜索引擎中，可以通过伪相关反馈、领域词向量或知识图谱来实现更精准的查询扩展。
 
+**语义匹配与字符匹配的互补。** Soundex 和 WordNet 分别从两个完全不同的维度扩展查询：前者关注字符串的发音近似，后者关注词汇的语义近似。实现 Soundex 时我们观察到，一个简单的 4 字符哈希就能把 `bounderi` 纠回 `boundari`、把 `Robert` 和 `Rupert` 映射到同一个 `R163` 码；但它同时会把 `flow` 和 `fly` 归为同组——这说明 Soundex 的代价是精确度的牺牲。两种扩展策略互补而非替代：Soundex 对拼写错误鲁棒但对同义词无感，WordNet 对同义词鲁棒但对拼写错误无感。二者合起来才构成对用户查询噪声更全面的容错层，这也是现代商用搜索引擎（Google 的 "Did you mean" + 同义词重写）同时部署多种扩展策略的根本动因。
+
 **前后端分离的工程价值。** 将检索逻辑封装为 RESTful API，前端负责交互和展示，这种架构使系统各模块可以独立开发、测试和部署。后端的 API 可以通过 curl 或 Swagger UI 直接测试，无需依赖前端界面；前端可以使用模拟数据独立开发，无需等待后端完成。FastAPI 的自动文档生成和 Pydantic 数据验证进一步提高了开发效率和代码可靠性。
 
-**对经典理论的重新认识。** 在课堂上学习 TF-IDF、余弦相似度、Zipf 定律等概念时，这些公式和定理显得抽象而遥远。通过本次实践，我们亲手实现了这些算法并在真实数据集上观察其效果：词频分布确实近似符合 Zipf 定律，IDF 确实能够有效地降低高频通用词的权重，余弦相似度确实能将最相关的文档排在前面。这种从理论到实践的完整闭环，使我们对信息检索的基础理论有了更深刻、更直观的理解，也激发了我们对这一领域前沿技术（如密集检索、RAG 等）的浓厚兴趣。
-
----
+**对经典理论的重新认识。** 在课堂上学习 TF-IDF、余弦相似度、Zipf 定律等概念时，这些公式和定理显得抽象而遥远。通过本次实践，我们亲手实现了这些算法并在真实数据集上观察其效果：词频分布确实近似符合 Zipf 定律，IDF 确实能够有效地降低高频通用词的权重，余弦相似度确实能将最相关的文档排在前面。这种从理论到实践的完整闭环，使我们对信息检索的基础理论有了更深刻、更直观的理解，也激发了我们对这一领域前沿技术（如密集检索、RAG 等）持续探索的浓厚兴趣。
 
 ## 参考文献
 
-[1] 印鉴, 陈忆群, 张钢. 搜索引擎技术研究与发展[J]. 计算机工程, 2005, 31(14): 1-3.
+[1] Manning C D, Raghavan P, Schütze H. Introduction to Information Retrieval[M]. Cambridge: Cambridge University Press, 2008.
 
-[2] Manning C D, Raghavan P, Schütze H. Introduction to Information Retrieval[M]. Cambridge University Press, 2008.
+[2] Manning C D, Raghavan P, Schütze H. 信息检索导论[M]. 王斌, 译. 北京: 人民邮电出版社, 2010.
 
-[3] Seymour T, Frantsvog D, Kumar S. History of Search Engines[J]. International Journal of Management & Information Systems, 2011, 15(4): 47-58.
+[3] 李晓明, 闫宏飞, 王继民. 搜索引擎——原理、技术与系统[M]. 2版. 北京: 科学出版社, 2012.
 
 [4] Brin S, Page L. The Anatomy of a Large-Scale Hypertextual Web Search Engine[J]. Computer Networks and ISDN Systems, 1998, 30(1-7): 107-117.
 
-[5] Liu T Y. Learning to Rank for Information Retrieval[J]. Foundations and Trends in Information Retrieval, 2009, 3(3): 225-331.
+[5] Devlin J, Chang M W, Lee K, et al. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding[C]//Proceedings of NAACL-HLT. Minneapolis: Association for Computational Linguistics, 2019: 4171-4186.
 
-[6] Devlin J, Chang M W, Lee K, et al. BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding[C]. NAACL-HLT, 2019: 4171-4186.
+[6] Seymour T, Frantsvog D, Kumar S. History of Search Engines[J]. International Journal of Management & Information Systems, 2011, 15(4): 47-58.
 
-[7] 李晓明, 刘建国. 搜索引擎技术及趋势[J]. 电脑与电信, 2008(5): 82-84.
+[7] Liu T Y. Learning to Rank for Information Retrieval[J]. Foundations and Trends in Information Retrieval, 2009, 3(3): 225-331.
 
-[8] Karpukhin V, Oguz B, Min S, et al. Dense Passage Retrieval for Open-Domain Question Answering[C]. EMNLP, 2020: 6769-6781.
+[8] Karpukhin V, Oguz B, Min S, et al. Dense Passage Retrieval for Open-Domain Question Answering[C]//Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP). Stroudsburg: Association for Computational Linguistics, 2020: 6769-6781.
 
-[9] Lewis P, Perez E, Piktus A, et al. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks[C]. NeurIPS, 2020: 9459-9474.
+[9] Lewis P, Perez E, Piktus A, et al. Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks[C]//Advances in Neural Information Processing Systems 33 (NeurIPS 2020). 2020: 9459-9474.
 
-[10] Manning C D, Raghavan P, Schütze H. 信息检索导论[M]. 王斌, 译. 人民邮电出版社, 2010.
+[10] Salton G, Wong A, Yang C S. A Vector Space Model for Automatic Indexing[J]. Communications of the ACM, 1975, 18(11): 613-620.
 
-[11] Salton G, Wong A, Yang C S. A Vector Space Model for Automatic Indexing[J]. Communications of the ACM, 1975, 18(11): 613-620.
+[11] Spärck Jones K. A Statistical Interpretation of Term Specificity and Its Application in Retrieval[J]. Journal of Documentation, 1972, 28(1): 11-21.
 
-[12] Spärck Jones K. A Statistical Interpretation of Term Specificity and Its Application in Retrieval[J]. Journal of Documentation, 1972, 28(1): 11-21.
+[12] Robertson S E. The Probability Ranking Principle in IR[J]. Journal of Documentation, 1977, 33(4): 294-304.
 
-[13] Robertson S E. The Probability Ranking Principle in IR[J]. Journal of Documentation, 1977, 33(4): 294-304.
+[13] Robertson S E, Walker S. Some Simple Effective Approximations to the 2-Poisson Model for Probabilistic Weighted Retrieval[C]//Proceedings of the 17th Annual International ACM SIGIR Conference on Research and Development in Information Retrieval. New York: Springer-Verlag, 1994: 232-241.
 
-[14] Robertson S E, Walker S. Some Simple Effective Approximations to the 2-Poisson Model for Probabilistic Weighted Retrieval[C]. SIGIR, 1994: 232-241.
+[14] Cleverdon C W. The Cranfield Tests on Index Language Devices[J]. Aslib Proceedings, 1967, 19(6): 173-192.
 
-[15] Cleverdon C W. The Cranfield Tests on Index Language Devices[J]. Aslib Proceedings, 1967, 19(6): 173-194.
+[15] Porter M F. An Algorithm for Suffix Stripping[J]. Program, 1980, 14(3): 130-137.
+
+[16] Zipf G K. Human Behavior and the Principle of Least Effort: An Introduction to Human Ecology[M]. Cambridge, MA: Addison-Wesley Press, 1949.
+
+[17] Miller G A. WordNet: A Lexical Database for English[J]. Communications of the ACM, 1995, 38(11): 39-41.
+
+[18] Russell R C, Odell M K. Soundex 发音索引编码系统[P]. U.S. Patent 1,261,167, 1918-04-02; U.S. Patent 1,435,663, 1922-11-14.

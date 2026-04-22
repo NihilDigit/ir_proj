@@ -28,9 +28,12 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { booleanSearch } from '../api'
 import ResultList from './ResultList.vue'
+
+const route = useRoute()
 
 const query = ref('')
 const results = ref([])
@@ -55,6 +58,13 @@ function insertOp(op) {
     el.setSelectionRange(newPos, newPos)
   })
 }
+
+onMounted(() => {
+  if (route.query.q) {
+    query.value = String(route.query.q)
+    doSearch()
+  }
+})
 
 async function doSearch() {
   if (!query.value.trim()) return

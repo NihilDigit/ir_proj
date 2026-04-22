@@ -36,6 +36,25 @@ class ExpandedSearchResponse(BaseModel):
     results: list[SearchResultItem]
 
 
+class SoundexSearchRequest(BaseModel):
+    query: str
+    top_k: int = 50
+    limit_per_term: int = 5
+
+
+class SoundexSuggestion(BaseModel):
+    code: str
+    candidates: list[str]
+
+
+class SoundexSearchResponse(BaseModel):
+    query: str
+    suggestion_map: dict[str, SoundexSuggestion]
+    expanded_query_terms: list[str]
+    result_count: int
+    results: list[SearchResultItem]
+
+
 class PostingsEntry(BaseModel):
     doc_id: int
     tf: int

@@ -6,6 +6,9 @@ from ..models import (
     SearchResponse,
     ExpandedSearchResponse,
     SearchResultItem,
+    SoundexSearchRequest,
+    SoundexSearchResponse,
+    SoundexSuggestion,
 )
 from ..core.boolean_search import BooleanSearchEngine
 from ..core.highlighter import highlight_text
@@ -70,6 +73,29 @@ async def expanded_search(req: ExpandedSearchRequest, request: Request):
     return ExpandedSearchResponse(
         query=req.query,
         expansion_map=expansion["expansion_map"],
+        expanded_query_terms=expansion["expanded_terms"],
+        result_count=len(ranked),
+        results=results,
+    )
+
+
+@router.post("/search/soundex", response_model=SoundexSearchResponse)
+async def soundex_search(req: SoundexSearchRequest, request: Request):
+    engine = request.app.state.engine
+    raw_terms = req.query.lower().split()
+    expansion = engine.soundex_corrector.expand(raw_terms, req.limit_per_term)
+    # 候选词已是 stem 形式（来自倒排索引），直接作为检索词
+    stemmer = engine.index.preprocessor.stemmer
+    stemmed_terms = list({stemmer.stem(t) for t in expansion["expanded_terms"]})
+    ranked = engine.tfidf_ranker.search(stemmed_terms, req.top_k)
+    results = _build_results(engine, ranked, expansion["expanded_terms"])
+    suggestion_map = {
+        term: SoundexSuggestion(code=info["code"], candidates=info["candidates"])
+        for term, info in expansion["suggestion_map"].items()
+    }
+    return SoundexSearchResponse(
+        query=req.query,
+        suggestion_map=suggestion_map,
         expanded_query_terms=expansion["expanded_terms"],
         result_count=len(ranked),
         results=results,

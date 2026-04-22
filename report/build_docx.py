@@ -41,9 +41,14 @@ def _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体"):
     if rf is None:
         rf = OxmlElement("w:rFonts")
         rPr.insert(0, rf)
+    # 移除 theme 引用，避免主题字体覆盖显式设置
+    for attr in ("asciiTheme", "hAnsiTheme", "eastAsiaTheme", "cstheme"):
+        if rf.get(qn("w:" + attr)) is not None:
+            del rf.attrib[qn("w:" + attr)]
     if ascii:
         rf.set(qn("w:ascii"), ascii)
         rf.set(qn("w:hAnsi"), ascii)
+        rf.set(qn("w:cs"), ascii)
     if east_asia:
         rf.set(qn("w:eastAsia"), east_asia)
 
@@ -122,9 +127,13 @@ def _set_indent(pPr, first_line_chars=None, first_line=None):
 
 
 def _clear_indent(pPr):
-    ind = pPr.find(qn("w:ind"))
-    if ind is not None:
+    for ind in pPr.findall(qn("w:ind")):
         pPr.remove(ind)
+    # 显式归零以覆盖父样式（Normal / BodyText）可能带来的首行缩进
+    ind = OxmlElement("w:ind")
+    ind.set(qn("w:firstLineChars"), "0")
+    ind.set(qn("w:firstLine"), "0")
+    pPr.append(ind)
 
 
 def make_run(text, ascii="Times New Roman", east_asia="宋体", sz=24,
@@ -291,10 +300,80 @@ def setup_page(doc):
     s = doc.sections[0]
     s.page_width = Twips(11906)
     s.page_height = Twips(16838)
-    s.top_margin = Twips(1701)
-    s.bottom_margin = Twips(1418)
-    s.left_margin = Twips(1588)
-    s.right_margin = Twips(1418)
+    # 贴合示例报告：上下 2.54cm、左右对称 3.18cm
+    s.top_margin = Twips(1440)
+    s.bottom_margin = Twips(1440)
+    s.left_margin = Twips(1800)
+    s.right_margin = Twips(1800)
+    s.header_distance = Twips(851)
+    s.footer_distance = Twips(850)
+
+    # sectPr: docGrid type=lines linePitch=312、页码起始 1
+    sectPr = s._sectPr
+    docGrid = sectPr.find(qn("w:docGrid"))
+    if docGrid is None:
+        docGrid = OxmlElement("w:docGrid")
+        sectPr.append(docGrid)
+    docGrid.set(qn("w:type"), "lines")
+    docGrid.set(qn("w:linePitch"), "312")
+
+    pgNumType = sectPr.find(qn("w:pgNumType"))
+    if pgNumType is None:
+        pgNumType = OxmlElement("w:pgNumType")
+        sectPr.append(pgNumType)
+    pgNumType.set(qn("w:start"), "1")
+
+
+def setup_header_footer(doc):
+    """按示例报告格式添加页眉/页脚。"""
+    section = doc.sections[0]
+
+    # —— 页眉：华北理工大学 理学院，居中，底边框 ——
+    header = section.header
+    # 清掉默认段落
+    for p in list(header.paragraphs):
+        p._element.getparent().remove(p._element)
+    hp = header.add_paragraph()
+    hpPr = _ensure_pPr(hp)
+    _set_jc(hpPr, "center")
+    _clear_indent(hpPr)
+    # 底边框
+    pBdr = OxmlElement("w:pBdr")
+    bottom = OxmlElement("w:bottom")
+    bottom.set(qn("w:val"), "single")
+    bottom.set(qn("w:sz"), "6")
+    bottom.set(qn("w:space"), "1")
+    bottom.set(qn("w:color"), "auto")
+    pBdr.append(bottom)
+    hpPr.insert(0, pBdr)
+    hp._element.append(make_run("华北理工大学 理学院", sz=21))
+
+    # —— 页脚：PAGE 域，居中 ——
+    footer = section.footer
+    for p in list(footer.paragraphs):
+        p._element.getparent().remove(p._element)
+    fp = footer.add_paragraph()
+    fpPr = _ensure_pPr(fp)
+    _set_jc(fpPr, "center")
+    _clear_indent(fpPr)
+    fr = OxmlElement("w:r")
+    frPr = OxmlElement("w:rPr")
+    fr.append(frPr)
+    _set_rFonts(frPr, ascii="Times New Roman", east_asia="宋体")
+    _set_sz(frPr, 21)
+    fld = OxmlElement("w:fldSimple")
+    fld.set(qn("w:instr"), "PAGE \\* MERGEFORMAT")
+    # fldSimple 需要包含结果 run
+    inner_r = OxmlElement("w:r")
+    inner_rPr = OxmlElement("w:rPr")
+    inner_r.append(inner_rPr)
+    _set_rFonts(inner_rPr, ascii="Times New Roman", east_asia="宋体")
+    _set_sz(inner_rPr, 21)
+    inner_t = OxmlElement("w:t")
+    inner_t.text = "1"
+    inner_r.append(inner_t)
+    fld.append(inner_r)
+    fp._element.append(fld)
 
 
 def setup_normal_style(doc):
@@ -459,7 +538,8 @@ def insert_cover(doc, template_path):
 
     body = doc.element.body
 
-    for idx in range(14):
+    # 只复制 12 段（到"设计时间"为止），去掉末尾空段避免封面溢出到下一页
+    for idx in range(12):
         src = tmpl.paragraphs[idx]
         elem = copy.deepcopy(src._element)
 
@@ -490,63 +570,554 @@ def insert_cover(doc, template_path):
 
         body.insert(idx, elem)
 
-    # Page break after cover (index 14)
-    pb = OxmlElement("w:p")
-    pb_r = OxmlElement("w:r")
-    pb_br = OxmlElement("w:br")
-    pb_br.set(qn("w:type"), "page")
-    pb_r.append(pb_br)
-    pb.append(pb_r)
-    body.insert(14, pb)
+    # Page break after cover：附加到封面最后一段末尾，避免插入"只含分页符
+    # 的空段落"被当作独立一行而产生空白页。
+    last_cover_p = body[11]
+    break_r = OxmlElement("w:r")
+    break_br = OxmlElement("w:br")
+    break_br.set(qn("w:type"), "page")
+    break_r.append(break_br)
+    last_cover_p.append(break_r)
 
 
-# ── main ─────────────────────────────────────────────────────────────────────
+# ── pandoc 转换 + 后处理 ─────────────────────────────────────────────────────
+
+def run_pandoc(md_file, out_file):
+    """Markdown → docx，交由 pandoc 处理公式/图片/caption/目录。"""
+    import subprocess
+    cmd = [
+        "pandoc", str(md_file),
+        "--from", "markdown+tex_math_dollars",
+        "--to", "docx",
+        "--toc", "--toc-depth=3",
+        "--metadata", "toc-title=目录",
+        "--output", str(out_file),
+    ]
+    subprocess.run(cmd, check=True, cwd=md_file.parent)
+
+
+def _find_style_by_id(doc, style_id):
+    for s in doc.styles:
+        if s.element.get(qn("w:styleId")) == style_id:
+            return s
+    return None
+
+
+def _strip_color(rPr):
+    for c in rPr.findall(qn("w:color")):
+        rPr.remove(c)
+
+
+def override_heading_styles(doc):
+    """覆盖 Heading1-4 的字体/字号/粗细/间距/颜色（去蓝色）。"""
+    levels = [
+        # (style_id, sz_half_pt, before_twips, after_twips, line_twips)
+        # 示例对应值：H2=32/260/260/416, H3=32/260/260/416, H4=28/280/290/376
+        ("Heading1", 32, 260, 260, 416),
+        ("Heading2", 32, 260, 260, 416),
+        ("Heading3", 32, 260, 260, 416),
+        ("Heading4", 28, 280, 290, 376),
+    ]
+    for style_id, sz, before, after, line in levels:
+        style = _find_style_by_id(doc, style_id)
+        if style is None:
+            continue
+        el = style.element
+        rPr = _ensure_rPr(el)
+        _strip_color(rPr)
+        _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+        _set_sz(rPr, sz)
+        _set_bold(rPr)
+        _set_italic(rPr, False)
+        # 同步 Char 样式（Heading1Char/Heading2Char…）
+        char_style = _find_style_by_id(doc, style_id + "Char")
+        if char_style is not None:
+            cel = char_style.element
+            crPr = _ensure_rPr(cel)
+            _strip_color(crPr)
+            _set_rFonts(crPr, ascii="Times New Roman", east_asia="宋体")
+            _set_sz(crPr, sz)
+            _set_bold(crPr)
+            _set_italic(crPr, False)
+        pPr = el.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            el.insert(0, pPr)
+        _set_spacing(pPr, before=before, after=after, line=line)
+        _clear_indent(pPr)
+        # 与下段同页 + 段中不分页：避免标题悬挂在页末
+        for tag in ("w:keepNext", "w:keepLines"):
+            if pPr.find(qn(tag)) is None:
+                pPr.append(OxmlElement(tag))
+    # TOCHeading 也去蓝色 + 居中
+    toch = _find_style_by_id(doc, "TOCHeading")
+    if toch is not None:
+        rPr = _ensure_rPr(toch.element)
+        _strip_color(rPr)
+        _set_rFonts(rPr, ascii="Times New Roman", east_asia="黑体")
+        _set_sz(rPr, 28)
+        _set_bold(rPr)
+        pPr = toch.element.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            toch.element.insert(0, pPr)
+        _set_jc(pPr, "center")
+        _clear_indent(pPr)
+    # Hyperlink 样式改为黑色无下划线（TOC 用它）；正文 [N] 自带 inline color 覆盖
+    hl = _find_style_by_id(doc, "Hyperlink")
+    if hl is not None:
+        rPr = _ensure_rPr(hl.element)
+        _strip_color(rPr)
+        # 显式 auto color
+        col = OxmlElement("w:color")
+        col.set(qn("w:val"), "auto")
+        rPr.append(col)
+        # 去下划线
+        for u in rPr.findall(qn("w:u")):
+            rPr.remove(u)
+
+    # Caption / ImageCaption / CaptionedFigure：去 italic、居中、去缩进
+    for sid in ("Caption", "ImageCaption", "CaptionedFigure"):
+        style = _find_style_by_id(doc, sid)
+        if style is None:
+            continue
+        rPr = _ensure_rPr(style.element)
+        _strip_color(rPr)
+        _set_italic(rPr, False)
+        if sid != "CaptionedFigure":
+            _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+            _set_sz(rPr, 21)
+        pPr = style.element.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            style.element.insert(0, pPr)
+        _set_jc(pPr, "center")
+        _clear_indent(pPr)
+
+
+def override_body_styles(doc):
+    """所有正文样式统一：宋体+TNR, sz=24, line=360, 首行缩进 2 字符, 两端对齐。"""
+    for sid in ("Normal", "BodyText", "FirstParagraph", "Compact"):
+        style = _find_style_by_id(doc, sid)
+        if style is None:
+            continue
+        el = style.element
+        rPr = _ensure_rPr(el)
+        _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+        _set_sz(rPr, 24)
+        pPr = el.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            el.insert(0, pPr)
+        _set_spacing(pPr, line=360)
+        _set_indent(pPr, first_line_chars=200, first_line=480)
+        _set_jc(pPr, "both")
+
+
+def override_code_style(doc):
+    """SourceCode：Courier 紧凑行距、左对齐、不缩进、不换行不自动换行。"""
+    for sid in ("SourceCode",):
+        style = _find_style_by_id(doc, sid)
+        if style is None:
+            continue
+        el = style.element
+        pPr = el.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            el.insert(0, pPr)
+        _set_spacing(pPr, before=0, after=0, line=260)
+        _set_jc(pPr, "left")
+        _clear_indent(pPr)
+        # 关闭 wordWrap=off（pandoc 默认关闭导致行内不折行）
+        ww = pPr.find(qn("w:wordWrap"))
+        if ww is None:
+            ww = OxmlElement("w:wordWrap")
+            pPr.append(ww)
+        ww.set(qn("w:val"), "on")
+        rPr = _ensure_rPr(el)
+        _set_rFonts(rPr, ascii="Consolas", east_asia="宋体")
+        _set_sz(rPr, 18)
+    # VerbatimChar 同步字体
+    vc = _find_style_by_id(doc, "VerbatimChar")
+    if vc is not None:
+        rPr = _ensure_rPr(vc.element)
+        _set_rFonts(rPr, ascii="Consolas")
+        _set_sz(rPr, 18)
+
+
+def override_list_styles(doc):
+    """列表：匹配示例样式 ind=left=320 firstLine=400，并把有序列表改为中文圆圈数字。"""
+    try:
+        numbering_part = doc.part.numbering_part
+    except Exception:
+        return
+    if numbering_part is None:
+        return
+    num_el = numbering_part.element
+    # 所有 abstractNum 统一为示例间距 (hanging indent: left=320, firstLine=400)
+    for ind in num_el.iter(qn("w:ind")):
+        ind.set(qn("w:left"), "320")
+        ind.set(qn("w:firstLine"), "400")
+        # 清除 hanging/start 让只用 left+firstLine
+        if ind.get(qn("w:hanging")) is not None:
+            del ind.attrib[qn("w:hanging")]
+    # 有序列表保持原生阿拉伯数字 "1."
+    for lvl in num_el.iter(qn("w:lvl")):
+        if lvl.get(qn("w:ilvl")) != "0":
+            continue
+        numFmt = lvl.find(qn("w:numFmt"))
+        lvlText = lvl.find(qn("w:lvlText"))
+        if numFmt is not None and lvlText is not None and numFmt.get(qn("w:val")) == "decimal":
+            lvlText.set(qn("w:val"), "%1.")
+        hanging = ind.get(qn("w:hanging"))
+        if hanging and int(hanging) > 360:
+            ind.set(qn("w:hanging"), "360")
+
+
+def _iter_all_p(body):
+    """遍历 body 下所有段落（包括 sdt/tbl 嵌套内）。"""
+    for p in body.iter(qn("w:p")):
+        yield p
+
+
+def _p_text(p):
+    return "".join(t.text or "" for t in p.iter(qn("w:t")))
+
+
+def fix_abstract_layout(doc):
+    """摘要/Abstract/目录 标题：黑体居中 14pt bold。
+    关键词行：整段 bold，无首行缩进。"""
+    body = doc.element.body
+    for p in _iter_all_p(body):
+        text = _p_text(p).strip()
+        if text in ("摘要", "摘　要", "Abstract", "目录"):
+            pPr = p.find(qn("w:pPr"))
+            if pPr is None:
+                pPr = OxmlElement("w:pPr")
+                p.insert(0, pPr)
+            # 摘要/Abstract 改为 Normal（避免被 TOC 收录），目录保持 TOCHeading
+            if text in ("摘要", "摘　要", "Abstract"):
+                # 把"摘　要"里的全角空格标准化成两个半角空格（匹配示例）
+                if text == "摘　要":
+                    for r in p.findall(qn("w:r")):
+                        for t in r.findall(qn("w:t")):
+                            if t.text and "　" in t.text:
+                                t.text = t.text.replace("　", "  ")
+                # 替换 pStyle 为 Normal
+                ps = pPr.find(qn("w:pStyle"))
+                if ps is None:
+                    ps = OxmlElement("w:pStyle")
+                    pPr.insert(0, ps)
+                ps.set(qn("w:val"), "Normal")
+                # 清除 outlineLvl（这是让 Heading 进 TOC 的关键属性）
+                for ol in pPr.findall(qn("w:outlineLvl")):
+                    pPr.remove(ol)
+            _set_jc(pPr, "center")
+            _clear_indent(pPr)
+            for r in p.findall(qn("w:r")):
+                rPr = _ensure_rPr(r)
+                _set_rFonts(rPr, ascii="Times New Roman", east_asia="黑体")
+                _set_sz(rPr, 28)
+                _set_bold(rPr)
+        elif text.startswith("关键词") or text.startswith("Keywords"):
+            pPr = p.find(qn("w:pPr"))
+            if pPr is None:
+                pPr = OxmlElement("w:pPr")
+                p.insert(0, pPr)
+            _clear_indent(pPr)
+            _set_jc(pPr, "left")
+            for r in p.findall(qn("w:r")):
+                rPr = _ensure_rPr(r)
+                _set_bold(rPr)
+
+
+def normalize_line_spacing(doc):
+    """仅在段落 pPr 里出现 line=exact 且过大时改为 auto 360（保留 code block 等合理紧凑）。"""
+    body = doc.element.body
+    for p in _iter_all_p(body):
+        pPr = p.find(qn("w:pPr"))
+        if pPr is None:
+            continue
+        # 跳过代码块（SourceCode pStyle）
+        ps = pPr.find(qn("w:pStyle"))
+        if ps is not None and ps.get(qn("w:val")) == "SourceCode":
+            continue
+        sp = pPr.find(qn("w:spacing"))
+        if sp is None:
+            continue
+        rule = sp.get(qn("w:lineRule"))
+        line = sp.get(qn("w:line"))
+        if rule == "exact" and line and int(line) > 420:
+            sp.set(qn("w:line"), "360")
+            sp.set(qn("w:lineRule"), "auto")
+
+
+def apply_first_line_indent(doc):
+    """段落级首行缩进控制：
+    - 正文段落：强制加 2 字符首行缩进（覆盖 pandoc 的 ind=0）。
+    - 列表项（带 numPr）/ 参考文献（[N] 开头）：显式清零首行缩进。
+    - 其他特殊段落：跳过不动。
+    """
+    SKIP_STYLE_PREFIXES = ("Heading", "TOC", "Caption", "ImageCaption",
+                           "CaptionedFigure", "SourceCode", "VerbatimChar",
+                           "Title", "Subtitle")
+    body = doc.element.body
+    for p in _iter_all_p(body):
+        pPr = p.find(qn("w:pPr"))
+        style_name = ""
+        if pPr is not None:
+            ps = pPr.find(qn("w:pStyle"))
+            if ps is not None:
+                style_name = ps.get(qn("w:val")) or ""
+        if any(style_name.startswith(pref) for pref in SKIP_STYLE_PREFIXES):
+            continue
+        # 跳过含图片/公式段落
+        if p.find(qn("w:drawing")) is not None:
+            continue
+        text = _p_text(p).strip()
+        if not text:
+            continue
+        if (text in ("摘要", "摘　要", "摘  要", "Abstract", "目录")
+                or text.startswith("关键词") or text.startswith("Keywords")):
+            continue
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            p.insert(0, pPr)
+        # 列表项和参考文献：首行缩进清零（覆盖 Normal/Compact 样式继承的缩进）
+        is_list = pPr.find(qn("w:numPr")) is not None
+        is_ref = bool(re.match(r"^\[\d+\]", text))
+        if is_list or is_ref:
+            _clear_indent(pPr)
+        else:
+            _set_indent(pPr, first_line_chars=200, first_line=480)
+
+
+def insert_chapter_page_breaks(doc):
+    """每个一级章节前插入 page break：摘要/Abstract/`N xxx`/参考文献。"""
+    body = doc.element.body
+    chapter_re = re.compile(r"^\d+\s+\S")
+    SECTION_LABELS = {"摘要", "摘　要", "摘  要", "Abstract"}
+    for p in list(_iter_all_p(body)):
+        pPr = p.find(qn("w:pPr"))
+        if pPr is None:
+            continue
+        ps = pPr.find(qn("w:pStyle"))
+        style = ps.get(qn("w:val")) if ps is not None else ""
+        text = _p_text(p).strip()
+        # 摘要/Abstract 现在是 Normal+居中，通过文字匹配
+        if text in SECTION_LABELS:
+            pass  # 允许插入
+        elif style == "Heading2" and (chapter_re.match(text) or text == "参考文献"):
+            pass
+        else:
+            continue
+        # 在段首插一个带 w:br type="page" 的 run
+        first_r = p.find(qn("w:r"))
+        if first_r is None:
+            continue
+        # 避免重复插入
+        existing_br = first_r.find(qn("w:br"))
+        if existing_br is not None and existing_br.get(qn("w:type")) == "page":
+            continue
+        new_r = OxmlElement("w:r")
+        br = OxmlElement("w:br")
+        br.set(qn("w:type"), "page")
+        new_r.append(br)
+        p.insert(list(p).index(first_r), new_r)
+
+
+def linkify_references(doc):
+    """给参考文献每条加 bookmark `ref_N`，正文中的 [N] 改为 internal hyperlink。"""
+    import re as _re
+    body = doc.element.body
+    bookmark_id = 5000
+    ref_numbers = set()
+
+    # —— Step 1: 参考文献章节的 [N] 加 bookmark ——
+    in_refs = False
+    for p in _iter_all_p(body):
+        pPr = p.find(qn("w:pPr"))
+        ps = pPr.find(qn("w:pStyle")) if pPr is not None else None
+        style_val = ps.get(qn("w:val")) if ps is not None else ""
+        text = _p_text(p)
+        if style_val.startswith("Heading") and "参考文献" in text:
+            in_refs = True
+            continue
+        if not in_refs:
+            continue
+        if style_val.startswith("Heading"):
+            in_refs = False
+            continue
+        m = _re.match(r'\s*\[(\d+)\]', text)
+        if not m:
+            continue
+        n = m.group(1)
+        if n in ref_numbers:
+            continue
+        ref_numbers.add(n)
+        bms = OxmlElement("w:bookmarkStart")
+        bms.set(qn("w:id"), str(bookmark_id))
+        bms.set(qn("w:name"), f"ref_{n}")
+        bme = OxmlElement("w:bookmarkEnd")
+        bme.set(qn("w:id"), str(bookmark_id))
+        bookmark_id += 1
+        first_r = p.find(qn("w:r"))
+        if first_r is not None:
+            idx = list(p).index(first_r)
+            p.insert(idx, bms)
+            p.insert(idx + 1, bme)
+
+    # —— Step 2: 正文里的 [N] 替换为 hyperlink ——
+    pat = _re.compile(r'\[(\d+)\]')
+    in_refs = False
+    for p in _iter_all_p(body):
+        pPr = p.find(qn("w:pPr"))
+        ps = pPr.find(qn("w:pStyle")) if pPr is not None else None
+        style_val = ps.get(qn("w:val")) if ps is not None else ""
+        text = _p_text(p)
+        if style_val.startswith("Heading") and "参考文献" in text:
+            in_refs = True
+            continue
+        if in_refs:
+            # 不在参考文献段落中转换 [N]，避免把编号本身变成自己的链接
+            continue
+        # 跳过代码块
+        if style_val == "SourceCode":
+            continue
+        # 迭代 run，替换 [N]
+        changed = True
+        while changed:
+            changed = False
+            for r in list(p.findall(qn("w:r"))):
+                ts = r.findall(qn("w:t"))
+                if len(ts) != 1:
+                    continue
+                t = ts[0]
+                txt = t.text or ""
+                m = pat.search(txt)
+                if not m:
+                    continue
+                n = m.group(1)
+                if n not in ref_numbers:
+                    continue  # 只链接实际存在的参考文献
+                before, after = txt[:m.start()], txt[m.end():]
+                rPr_src = r.find(qn("w:rPr"))
+                parent = r.getparent()
+                idx = list(parent).index(r)
+                parent.remove(r)
+
+                def _clone_run(text_content):
+                    new_r = OxmlElement("w:r")
+                    if rPr_src is not None:
+                        new_r.append(copy.deepcopy(rPr_src))
+                    new_t = OxmlElement("w:t")
+                    new_t.set(qn("xml:space"), "preserve")
+                    new_t.text = text_content
+                    new_r.append(new_t)
+                    return new_r
+
+                # 国标引用格式：黑色上标（保留点击跳转）
+                hp = OxmlElement("w:hyperlink")
+                hp.set(qn("w:anchor"), f"ref_{n}")
+                hp.set(qn("w:history"), "1")
+                link_r = OxmlElement("w:r")
+                if rPr_src is not None:
+                    link_rPr = copy.deepcopy(rPr_src)
+                else:
+                    link_rPr = OxmlElement("w:rPr")
+                for c in link_rPr.findall(qn("w:color")):
+                    link_rPr.remove(c)
+                for u in link_rPr.findall(qn("w:u")):
+                    link_rPr.remove(u)
+                for v in link_rPr.findall(qn("w:vertAlign")):
+                    link_rPr.remove(v)
+                col = OxmlElement("w:color")
+                col.set(qn("w:val"), "auto")
+                link_rPr.append(col)
+                va = OxmlElement("w:vertAlign")
+                va.set(qn("w:val"), "superscript")
+                link_rPr.append(va)
+                link_r.append(link_rPr)
+                link_t = OxmlElement("w:t")
+                link_t.set(qn("xml:space"), "preserve")
+                link_t.text = f"[{n}]"
+                link_r.append(link_t)
+                hp.append(link_r)
+
+                insert_at = idx
+                if after:
+                    parent.insert(insert_at, _clone_run(after))
+                parent.insert(insert_at, hp)
+                if before:
+                    parent.insert(insert_at, _clone_run(before))
+                changed = True
+                break  # restart scan
+
+
+def enable_update_fields_on_open(doc):
+    """让 Word/LibreOffice 首次打开时自动更新 TOC 等域。"""
+    settings = doc.settings.element
+    # 移除已有的 updateFields
+    for old in settings.findall(qn("w:updateFields")):
+        settings.remove(old)
+    upd = OxmlElement("w:updateFields")
+    upd.set(qn("w:val"), "true")
+    settings.insert(0, upd)
+
+
+def fix_body_indent(doc):
+    """给正文段落加 2 字符首行缩进（不影响标题/图/列表/TOC）。"""
+    skip_styles = {"Heading1", "Heading2", "Heading3", "Heading4", "Heading5",
+                   "Heading 1", "Heading 2", "Heading 3", "Heading 4",
+                   "CaptionedFigure", "ImageCaption", "Caption",
+                   "TOC1", "TOC2", "TOC3", "TOCHeading",
+                   "TOC 1", "TOC 2", "TOC 3", "TOC Heading",
+                   "SourceCode", "VerbatimChar", "CompactFirstLineIndent"}
+    for p in doc.paragraphs:
+        style_name = p.style.name if p.style else ""
+        if style_name in skip_styles or style_name.startswith(("Heading", "TOC", "Caption")):
+            continue
+        text = p.text.strip()
+        if not text:
+            continue
+        if text.startswith("关键词") or text.startswith("Keywords"):
+            continue
+        # 跳过含图/公式的段落（通常无 text 或 text 只含 caption）
+        if p._element.find(qn("w:drawing")) is not None:
+            continue
+        pPr = _ensure_pPr(p)
+        # 只有没设过 ind 时才加
+        if pPr.find(qn("w:ind")) is None:
+            _set_indent(pPr, first_line_chars=200, first_line=480)
+
 
 def main():
-    md = MD_FILE.read_text("utf-8")
-    elements = parse_md(md)
-    print(f"Parsed {len(elements)} elements from markdown")
+    # Step 1: pandoc 生成主体
+    pandoc_out = REPORT_DIR / "_pandoc_out.docx"
+    run_pandoc(MD_FILE, pandoc_out)
+    print(f"Pandoc →  {pandoc_out}")
 
-    doc = Document()
+    # Step 2: python-docx 后处理
+    doc = Document(str(pandoc_out))
+
     setup_page(doc)
-    setup_normal_style(doc)
+    setup_header_footer(doc)
+    override_heading_styles(doc)
+    override_body_styles(doc)
+    override_code_style(doc)
+    override_list_styles(doc)
+    normalize_line_spacing(doc)
+    fix_abstract_layout(doc)
+    apply_first_line_indent(doc)
+    insert_chapter_page_breaks(doc)
+    linkify_references(doc)
+    enable_update_fields_on_open(doc)
 
-    # Remove default empty paragraph
-    if doc.paragraphs:
-        doc.element.body.remove(doc.paragraphs[0]._element)
-
-    # Build body
-    for etype, content in elements:
-        if etype == "pagebreak":
-            add_page_break(doc)
-        elif etype == "abstract_title":
-            add_abstract_title(doc, content)
-        elif etype == "h2":
-            add_heading2(doc, content)
-        elif etype == "h3":
-            add_heading3(doc, content)
-        elif etype == "h4":
-            add_heading4(doc, content)
-        elif etype == "figure":
-            caption, rel_path = content
-            img = REPORT_DIR / rel_path
-            if img.exists():
-                add_figure(doc, img, caption)
-            else:
-                print(f"  WARNING: missing image {img}")
-        elif etype == "code":
-            add_code_block(doc, content)
-        elif etype == "math":
-            add_math_block(doc, content)
-        elif etype == "list_item":
-            add_unindented_para(doc, content)
-        elif etype == "paragraph":
-            add_body_para(doc, content)
-
-    # Insert cover at beginning (after body is built, so Normal style isn't overridden)
+    # Step 3: 封面
     insert_cover(doc, TEMPLATE_FILE)
 
     doc.save(str(OUTPUT_FILE))
+    pandoc_out.unlink(missing_ok=True)
     print(f"Saved → {OUTPUT_FILE}")
     print(f"Size: {OUTPUT_FILE.stat().st_size / 1024:.0f} KB")
 

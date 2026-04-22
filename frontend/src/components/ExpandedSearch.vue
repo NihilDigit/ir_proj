@@ -41,10 +41,12 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { expandedSearch } from '../api'
 import ResultList from './ResultList.vue'
 
+const route = useRoute()
 const query = ref('')
 const maxSynonyms = ref(3)
 const results = ref([])
@@ -53,6 +55,13 @@ const searched = ref(false)
 const loading = ref(false)
 const highlightTerms = ref('')
 const expansionMap = ref(null)
+
+onMounted(() => {
+  if (route.query.q) {
+    query.value = String(route.query.q)
+    doSearch()
+  }
+})
 
 async function doSearch() {
   if (!query.value.trim()) return

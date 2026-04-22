@@ -11,6 +11,9 @@ export const phraseSearch = (query, topK = 50) =>
 export const expandedSearch = (query, maxSynonyms = 3, topK = 50) =>
   api.post('/search/expanded', { query, max_synonyms: maxSynonyms, top_k: topK })
 
+export const soundexSearch = (query, limitPerTerm = 5, topK = 50) =>
+  api.post('/search/soundex', { query, limit_per_term: limitPerTerm, top_k: topK })
+
 export const getDictionary = (page = 1, size = 50, search = '') =>
   api.get('/index/dictionary', { params: { page, size, search } })
 
