@@ -723,13 +723,17 @@ class SoundexCorrector:
 
     def suggest(self, word, limit=10):
         code = soundex(word)
-        candidates = sorted(self.code_to_terms.get(code, set()) - {word.lower()})
+        raw = self.code_to_terms.get(code, set()) - {word.lower()}
+        # 按 (公共前缀长度, 长度差, 字母序) 排序
+        candidates = sorted(raw, key=lambda c: (
+            -_common_prefix_len(word, c),
+            abs(len(c) - len(word)), c))
         return code, candidates[:limit]
 ```
 
 `SoundexCorrector` 在初始化时接收倒排索引的全部词项（4,682 个），为每个词计算 Soundex 编码并构建反向映射。查询阶段的单次 `suggest` 调用仅需 O(1) 的哈希查找，性能开销可忽略。由 `_CODE_MAP` 中的 `h` 与 `w` 故意缺席可见：该实现**跳过**这两个字母而不是将它们视作分隔符，对应标准 Soundex 的常见简化版——对英文普通文本的纠错效果几乎没有损失。
 
-**运行界面。** 图 13 为发音矫正的运行界面。输入 `bounderi flo`（两个都是拼写错误），系统显示 `bounderi → B536 → boundari`（成功纠回 "boundari"）和 `flo → F400 → fail, fale, fall, feel, fell`（发音相近但不全相关，体现了 Soundex 召回为主的特点），再用扩展后的词集参与 TF-IDF 排序得到 50 条排名靠前的检索结果。
+**运行界面。** 图 13 为发音矫正的运行界面。输入 `bounderi flo`（两个都是拼写错误），系统显示 `bounderi → B536 → boundari`（成功纠回 "boundari"）和 `flo → F400 → flow, fli, fl, fail, fale`（候选按与原词公共前缀长度排序，最相关的 flow 排在首位）。检索阶段只取每个查询词的 top-1 候选参与 TF-IDF 排序，避免拼写相近但语义无关的候选污染结果；最终得到 50 条排序后的文档。
 
 ![图 13  发音矫正运行界面](figures/ui_soundex_result.png){width=13cm}
 
