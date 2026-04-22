@@ -6,9 +6,9 @@
 #   · frontend/          —— 前端源码（不含 node_modules / dist）
 #   · data/              —— Cranfield 原始数据
 #   · report/            —— 报告源码 + 产物（md/docx/pdf + 生成脚本 + 图）
-#   · pyproject.toml / uv.lock / README.md / CLAUDE.md / .gitignore / pack.sh
+#   · pyproject.toml / uv.lock / README.md / .gitignore / pack.sh
 #
-# 排除：__pycache__, .venv, node_modules, *.pkl, .git, dist, .claude
+# 排除：__pycache__, .venv, node_modules, *.pkl, .git, dist, 一切 AI 相关
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -28,7 +28,7 @@ zip -r "$ZIP_PATH" \
   data/ \
   report/ \
   pyproject.toml uv.lock \
-  README.md CLAUDE.md \
+  README.md \
   .gitignore pack.sh \
   -x '*/__pycache__/*' \
   -x '*/__pycache__' \
@@ -40,13 +40,19 @@ zip -r "$ZIP_PATH" \
   -x 'backend/app/data/*.pkl' \
   -x '*/.git/*' \
   -x '.git/*' \
-  -x '*/.claude/*' \
-  -x '.claude/*' \
   -x 'dist/*' \
   -x 'report/_pandoc_out.docx' \
   -x 'report/test_pandoc.pdf' \
   -x 'report/report.html' \
   -x '.DS_Store' \
+  -x 'CLAUDE.md' '*/CLAUDE.md' \
+  -x '.claude/*' '*/.claude/*' '*/.claude' \
+  -x '.impeccable.md' '*/.impeccable.md' \
+  -x '.cursor*' '*/.cursor*' \
+  -x '.aider*' '*/.aider*' \
+  -x '.continue*' '*/.continue*' \
+  -x '.copilot*' '*/.copilot*' \
+  -x '.github/copilot*' \
   > /dev/null
 
 SIZE=$(du -h "$ZIP_PATH" | cut -f1)
