@@ -31,10 +31,18 @@ class BooleanSearchEngine:
 
     def _parse_and(self, tokens: list[str], pos: int) -> tuple[set[int], int]:
         left, pos = self._parse_not(tokens, pos)
-        while pos < len(tokens) and tokens[pos].upper() == "AND":
-            pos += 1
-            right, pos = self._parse_not(tokens, pos)
-            left = left & right
+        while pos < len(tokens):
+            tok = tokens[pos].upper()
+            if tok == "AND":
+                pos += 1
+                right, pos = self._parse_not(tokens, pos)
+                left = left & right
+            elif tok == "NOT":
+                # 允许隐式 AND：`A NOT B` 等价 `A AND NOT B`
+                right, pos = self._parse_not(tokens, pos)
+                left = left & right
+            else:
+                break
         return left, pos
 
     def _parse_not(self, tokens: list[str], pos: int) -> tuple[set[int], int]:
