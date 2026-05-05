@@ -14,6 +14,7 @@ class BooleanSearchEngine:
         tokens = self._tokenize(query)
         if not tokens:
             return set()
+        # 入口走最低优先级（OR），递归向下依次进入更高优先级
         result, _ = self._parse_or(tokens, 0)
         return result
 
@@ -21,6 +22,9 @@ class BooleanSearchEngine:
         query = re.sub(r"([()])", r" \1 ", query)
         return query.split()
 
+    # 嵌套调用顺序决定运算符优先级：
+    # _parse_or → _parse_and → _parse_not → _parse_atom
+    # 越靠近叶节点优先级越高：NOT 最高、AND 次之、OR 最低，与文献惯例一致。
     def _parse_or(self, tokens: list[str], pos: int) -> tuple[set[int], int]:
         left, pos = self._parse_and(tokens, pos)
         while pos < len(tokens) and tokens[pos].upper() == "OR":

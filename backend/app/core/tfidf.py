@@ -32,11 +32,14 @@ class TFIDFRanker:
         return self._rank(query_terms, doc_ids, top_k)
 
     def _rank(self, query_terms: list[str], doc_ids: set[int] | None, top_k: int) -> list[tuple[int, float]]:
+        # 单次计算每个查询词的 IDF，复用于查询权重与文档权重，避免重复 log 计算
         query_weights: dict[str, float] = {}
+        idf_cache: dict[str, float] = {}
         for term in set(query_terms):
             if term in self.index.index:
-                tf = 1 + math.log10(query_terms.count(term))
                 idf = math.log10(self.N / len(self.index.index[term]))
+                tf = 1 + math.log10(query_terms.count(term))
+                idf_cache[term] = idf
                 query_weights[term] = tf * idf
 
         query_norm = math.sqrt(sum(w * w for w in query_weights.values()))
@@ -45,8 +48,8 @@ class TFIDFRanker:
 
         scores: dict[int, float] = {}
         for term, q_weight in query_weights.items():
+            idf = idf_cache[term]
             postings = self.index.index[term]
-            idf = math.log10(self.N / len(postings))
             for doc_id, positions in postings.items():
                 if doc_ids is not None and doc_id not in doc_ids:
                     continue
