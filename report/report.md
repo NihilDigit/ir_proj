@@ -1,6 +1,6 @@
 ## 摘　要
 
-本课程设计基于经典的 Cranfield 信息检索测试集（1400 篇航空动力学论文摘要），设计并实现了一个完整的搜索引擎系统。系统后端采用 Python FastAPI 框架，前端采用 Vue 3 构建 Web 界面。在数据预处理阶段，对英文文档进行小写化、去标点、分词、去停用词和 Porter 词干提取，生成包含位置信息的倒排索引。系统实现了三种检索方式：基于递归下降解析器的布尔检索（支持 AND、OR、NOT 及括号嵌套）、基于位置信息的短语查询、以及基于 WordNet 的同义词查询扩展。所有检索结果均采用 TF-IDF 向量空间模型计算余弦相似度进行排序，并在 Web 界面中对匹配词项进行高亮显示。此外，系统提供了词典浏览和倒排记录表查看功能，便于直观理解索引结构。实验结果表明，系统能够有效地对 Cranfield 数据集进行多模式检索，验证了布尔模型、向量空间模型等经典信息检索理论的实际效果。
+本课程设计基于 Cranfield 信息检索测试集（1400 篇航空动力学论文摘要、225 条查询、1837 条人工相关性判断）实现了一个完整的搜索引擎系统。文档经分词、去停用词与 Porter 词干提取后构建为带位置信息的倒排索引。系统支持四种检索方式：递归下降解析的布尔检索（支持 AND、OR、NOT 与括号嵌套）、基于位置信息的短语查询、基于 WordNet 同义词的查询扩展，以及基于 Soundex 编码的发音矫正；检索结果统一以词频—逆文档频率（TF-IDF）向量空间模型的余弦相似度排序。在 225 条标准查询上的定量评估表明，平均精度均值（MAP）为 0.276、前 10 准确率（P\@10）为 0.222、归一化折损累计增益（NDCG\@10）为 0.352，达到了经典向量空间模型在 Cranfield 上的基线水平。
 
 **关键词：** 信息检索；倒排索引；TF-IDF；布尔检索；查询扩展
 
@@ -8,7 +8,7 @@
 
 ## Abstract
 
-This course project designs and implements a complete search engine system based on the classic Cranfield information retrieval test collection, which comprises 1,400 aerospace engineering paper abstracts, 225 standard queries, and 1,837 human-annotated relevance judgments. The backend is built with Python FastAPI, while the frontend is developed using Vue 3 as a single-page application. During the data preprocessing stage, English documents undergo lowercasing, punctuation removal, tokenization, stop word removal, and Porter stemming to produce a position-aware inverted index containing 4,682 unique terms. The system supports four retrieval modes: Boolean search based on a recursive descent parser (supporting AND, OR, NOT operators and nested parentheses), phrase search utilizing positional information for consecutive term matching, query expansion leveraging the WordNet lexical database for synonym-based retrieval enhancement, and Soundex phonetic correction for spelling-tolerant lookup. All search results are ranked by cosine similarity computed from the TF-IDF vector space model, with matching terms highlighted in the web interface. Additionally, the system provides dictionary browsing and posting list inspection functionalities, enabling users to interactively explore the underlying index structure. Experimental results demonstrate that the system effectively performs multi-mode retrieval on the Cranfield dataset, validating the practical effectiveness of classical information retrieval theories including the Boolean model and the vector space model.
+This work implements a search engine for the Cranfield collection (1,400 documents, 225 queries, 1,837 relevance judgments). Documents are tokenized, lowercased, stop-word filtered, and Porter-stemmed into a position-aware inverted index. Four retrieval modes are supported: Boolean queries with parentheses, phrase queries via positional information, WordNet synonym expansion, and Soundex spelling correction. Results are ranked by cosine similarity over term frequency–inverse document frequency (TF-IDF) weights. On the standard queries, the system attains mean average precision (MAP) of 0.276, precision at 10 of 0.222, and normalized discounted cumulative gain at rank 10 (NDCG\@10) of 0.352, matching classical vector-space baselines on Cranfield.
 
 **Keywords:** Information Retrieval; Inverted Index; TF-IDF; Boolean Retrieval; Query Expansion
 
@@ -24,37 +24,35 @@ This course project designs and implements a complete search engine system based
 
 ### 1.2 搜索引擎的国内外发展现状
 
-#### 1.2.1 国内搜索引擎
+搜索引擎诞生半个多世纪以来，其核心问题始终是"如何在大规模文档集中为用户查询找到最相关的内容"[3]。围绕这一问题，国内外搜索引擎在技术路线上大致经历了三个阶段：基于词项字面匹配的稀疏检索阶段、基于语义向量的神经检索阶段，以及与大语言模型相结合的生成式检索阶段[6]。每一阶段都由若干奠基性的算法或模型推动，并对应一批具有代表性的国内外搜索引擎产品。本节按时间顺序梳理这条主线，并在最后说明本课程设计在这条线上的位置。
 
-国内搜索引擎市场以百度为主导，同时搜狗、360 搜索等也占有一定的市场份额，形成了多元竞争的格局。
+#### 1.2.1 经典阶段：从向量空间模型到 BM25
 
-**百度搜索**是中国最大的搜索引擎，自 2000 年成立以来，在中文信息检索领域积累了深厚的技术储备[3]。百度在中文分词方面投入了大量研究，针对中文没有天然词边界的特点，开发了基于统计语言模型和深度学习的分词系统，能够准确处理歧义切分和新词识别等难题。在知识图谱方面，百度构建了大规模中文知识图谱，将实体识别、关系抽取和知识推理技术应用于搜索结果的增强展示，用户搜索特定实体时可以直接在搜索页面看到结构化的知识卡片。近年来，百度积极推进大语言模型在搜索中的应用，推出了基于文心大模型的 AI 搜索功能，能够对用户的复杂问题进行语义理解并生成综合性的回答。
+最早被广泛实现的检索模型是布尔模型[2]：文档与查询都被视作词项集合，通过 AND/OR/NOT 集合运算决定文档是否匹配。布尔模型逻辑明确、实现高效，缺点是不支持结果排序、查询构造门槛高。1975 年 Salton 等人提出向量空间模型（Vector Space Model, VSM）[10]，将文档和查询表示为高维空间中的向量，以余弦相似度衡量相关性，开启了"软匹配加排序"的范式。Spärck Jones 1972 年的 IDF 工作[11]进一步给出了对词项赋权的统计学解释：检索意义与逆文档频率成正比。VSM 与 IDF 的结合即 TF-IDF 权重方案，至今仍是工业搜索系统中最常见的稀疏检索基线，本课程设计的排序模块即以此为基础。
 
-**搜狗搜索**的独特优势在于其与搜狗输入法的深度联动。搜狗输入法拥有庞大的用户基础，通过分析用户的输入行为和搜索习惯，搜狗能够更精准地理解用户意图。搜狗搜索在微信公众号内容的检索方面具有独家优势，能够索引和检索微信公众号的文章内容，这是其他搜索引擎难以覆盖的内容来源。此外，搜狗在语音搜索和图片搜索等多模态检索方面也进行了积极探索，将语音识别和图像理解技术融入搜索产品。
+1990 年代末互联网内容规模急剧膨胀，纯文本相关性已不足以处理垃圾页、低质内容与重复网页。1998 年 Brin 和 Page 提出 PageRank[4]，将整个 Web 视为有向图，用马尔可夫稳态分布估计每个网页的"权威度"。PageRank 与 TF-IDF 一起构成了早期 Google 的两条排序信号，使搜索引擎从单一的"文本相关性"扩展到"文本相关性 + 链接结构质量"的双信号体系。
 
-**360 搜索**依托 360 安全浏览器的用户基础迅速崛起，在安全搜索方面具有特色。360 搜索强调对恶意网站和虚假信息的过滤，利用 360 安全大数据对搜索结果进行安全评估和标注。在技术层面，360 搜索在网页去重、反作弊和搜索结果多样性等方面持续投入，力求为用户提供更安全、更可信的搜索体验。
+同一时期，Robertson 等人在概率排序原理[12]基础上提出 BM25[13]。BM25 在 TF-IDF 的基础上引入了词频饱和项 $f / (f + k_1)$ 与文档长度归一化项 $b \cdot |d| / avgdl$，缓解了"长文档凭借堆砌关键词获得不正常高分"的偏差。BM25 至今仍是 Lucene、Elasticsearch 等工业搜索引擎的默认排序函数，也是评估任何新方法时几乎必备的强基线。Yahoo、Bing 等公司在这一阶段进一步引入了排序学习（Learning to Rank）[7]，把人工设计的相关性特征送入梯度提升或神经网络模型，开启了"机器学习排序"的工程范式。
 
-#### 1.2.2 国外搜索引擎
+经典阶段催生了第一波具有规模影响力的搜索引擎产品。国外方面，1995 年的 AltaVista 是首批支持自然语言查询的全文搜索引擎，1996 年的 HotBot、1997 年的 Excite 等也凭借不同的索引规模与界面风格短期占据了市场份额；1998 年成立的 Google 凭借 PageRank 在排序质量上拉开差距，成为这一阶段最终的赢家；2009 年微软重塑 MSN Search 推出 Bing，用算法竞品的方式延续了这一阶段的工程路线。国内方面，1996 年的搜狐目录式搜索是早期门户的标志，2000 年李彦宏创立的百度凭借中文分词与本土化优势奠定了国内市场的领导地位，此后陆续出现的搜狗、有道、360 综合搜索、爱问、即刻搜索等产品共同构成了中文 Web 检索的多元格局。
 
-国外搜索引擎从目录式检索到全文检索，再到语义理解经历了深刻变革。
+#### 1.2.2 神经阶段：BERT 与密集向量检索
 
-**Google** 是全球最具影响力的搜索引擎，其成功始于 1998 年 Brin 和 Page 提出的 PageRank 算法[4]。PageRank 通过分析网页之间的链接关系来评估页面的重要性，将"网页被引用的次数和质量"作为排序的重要信号，这一创新彻底改变了搜索引擎的排序范式。在此基础上，Google 不断引入更先进的技术：2012 年推出知识图谱（Knowledge Graph），将搜索从关键词匹配提升到实体理解层面，用户搜索"爱因斯坦"时不仅能看到相关网页，还能看到包含生平、成就、相关人物等信息的知识面板；2019 年，Google 将 BERT 预训练语言模型应用于搜索查询的理解[5]，显著提升了对自然语言查询特别是长尾查询的理解能力，例如能够正确理解"到巴西的美国人需要签证吗"中"到"的方向性含义。2021 年，Google 进一步推出 MUM（Multitask Unified Model），支持跨语言、跨模态的信息理解，标志着搜索引擎向多模态智能方向迈进。
+经典阶段的方法本质上属于"稀疏检索"——文档与查询都用稀疏的词项向量表示，匹配依赖字面对齐。其根本局限在于无法处理同义词、近义词与语义等价但用词不同的查询。早期的同义词扩展（包括本系统使用的 WordNet 模块）可以部分缓解这一问题，但精度受词典覆盖度限制。
 
-**Bing** 是微软推出的搜索引擎，长期以来在全球市场占据第二的位置。Bing 在视觉搜索方面具有特色，提供了丰富的图片和视频搜索体验。2023 年，微软将 OpenAI 的 GPT-4 大语言模型整合到 Bing 搜索中，推出了"新 Bing"（Bing Chat），用户可以通过对话式交互获取搜索结果的智能摘要和直接答案。这一举措使 Bing 成为最早将生成式 AI 深度融入搜索体验的主流搜索引擎之一，推动了整个搜索行业向 AI 驱动的方向转型。Bing 的这一创新也迫使 Google 加速推出了自己的 AI 搜索产品（SGE/AI Overviews），引发了搜索引擎领域的新一轮技术竞赛。
+2018 年 Google 提出的 BERT[5]带来了根本性变化。BERT 通过双向 Transformer 在大规模无标注语料上预训练，能够把每个词在其上下文中的语义编码为稠密向量。2019 年 Google 将 BERT 部署到搜索的查询理解模块，明显改善了对自然语言长尾查询的处理能力——一个被反复引用的例子是查询 "to brazil traveler usa visa" 中介词 "to" 的方向性，BERT 能正确解读为"美国旅行者去巴西"而非"巴西旅行者去美国"。
 
-**Yahoo 搜索**是互联网早期最重要的搜索引擎之一[6]。Yahoo 最初采用人工编辑的目录分类方式组织网页信息，这种模式在互联网早期内容量有限时非常有效。随着网络内容的爆炸式增长，Yahoo 逐步转向自动化的全文检索技术。尽管在搜索市场的竞争中逐渐被 Google 超越，但 Yahoo 在信息检索领域仍有重要贡献，其研究部门在排序学习[7]、点击模型和用户行为分析等方面产出了大量有影响力的研究成果。
+BERT 起初以 reranking 形式接入：先用 BM25 做粗排，再用 BERT 对头部 K 篇做精排。这种 "sparse + neural rerank" 级联架构至今仍是工业系统中的常见形态。2020 年 Karpukhin 等人提出 DPR（Dense Passage Retrieval）[8]，把 BERT 改造为双塔结构，将查询和文档分别编码为 768 维稠密向量，再用 FAISS 等近似最近邻索引完成端到端的语义检索。同期 Khattab 与 Zaharia 的 ColBERT 进一步引入 token 级延迟交互，保留了更细粒度的语义信号。这一阶段的检索从"匹配字面词项"过渡到"匹配语义"，但密集检索在领域泛化、训练数据负采样与可解释性等方面仍有挑战，工业界普遍采用 BM25 与稠密检索混合的"sparse + dense"策略，把召回率与精确度做平衡。
 
-#### 1.2.3 搜索引擎发展趋势
+国内外的主要搜索引擎在这一阶段相继落地神经检索。Google 自 2019 年将 BERT 部署到搜索查询理解后，又陆续推出 MUM、Pathways 系列模型；Bing 把 MS MARCO 数据集与 Turing 系列模型纳入排序栈；Facebook（现 Meta）公开了 DPR 与 FAISS，推动了开源社区对密集向量检索的工程化落地。国内方面，百度的文心 ERNIE 系列、阿里达摩院的 StructBERT 与 PLM-NR、腾讯的 TencentPretrain 等相继被应用于搜索意图理解与召回；华为的盘古、智源的悟道等模型也以预训练 + 检索的形式在垂直场景部署。语义检索能力的普及使搜索引擎开始能够处理"如何把电池续航从 6 小时延长到 8 小时"这类自然语言长查询，而不再依赖用户自行抽取关键词。
 
-当前搜索引擎正经历前所未有的技术变革，多个方向的进展共同重塑着搜索引擎的未来形态。
+#### 1.2.3 生成阶段：RAG 与 AI 原生搜索
 
-**密集向量检索**（Dense Retrieval）是近年来信息检索领域最重要的突破之一[8]。传统的检索方法依赖于词项的精确匹配，无法处理同义词和语义相关的表述。密集向量检索利用预训练语言模型将查询和文档编码为稠密向量，在向量空间中通过近似最近邻搜索实现语义级别的匹配。DPR（Dense Passage Retrieval）[8]、ColBERT 等方法在开放域问答等任务上展现了超越传统 BM25 的检索效果。然而，密集检索在计算效率、领域泛化和可解释性方面仍面临挑战，目前业界普遍采用稀疏检索与密集检索相结合的混合检索策略。
+2020 年 Lewis 等人提出 RAG（Retrieval-Augmented Generation）[9]：先用检索器从知识库中召回与问题相关的文档片段，再将这些片段作为上下文交给生成模型产出答案。RAG 把"检索"从答案的入口提升为答案生成的依据，既保留了检索系统对时效性与事实性的把控，又借助大语言模型完成跨文档的推理与汇总，有效缓解了大模型的"幻觉"问题。RAG 迅速成为大模型时代落地最广泛的工程范式，被普遍部署在企业知识库、智能客服、学术助手等场景。
 
-**检索增强生成**（Retrieval-Augmented Generation, RAG）将信息检索与大语言模型的生成能力相结合[9]，成为当前最热门的技术方向之一。RAG 系统先通过检索模块从知识库中获取与用户问题相关的文档片段，再将这些片段作为上下文输入大语言模型进行回答生成。这种方法既利用了检索系统的精确性和时效性，又发挥了大语言模型的语言理解和生成能力，有效缓解了大模型的"幻觉"问题。RAG 已广泛应用于企业知识管理、智能客服、学术辅助等场景。
+2023 年起，AI 原生搜索引擎在国内外密集涌现，构成了这一阶段最热闹的产品矩阵。国外方面，微软将 GPT-4 整合进 Bing 推出 Bing Chat（后更名为 Microsoft Copilot），是最早一批面向公众的对话式搜索产品；Google 跟进发布 Search Generative Experience（后更名为 AI Overviews），并在 Gemini 中提供独立的对话搜索入口；Perplexity AI 凭借"对话式回答 + 内联引用"成为 RAG 形态的标志性独立产品；You.com、Phind、Andi、Komo 等垂直产品也分别面向通用、开发者、年轻用户等细分场景切入。国内方面，百度的文心一言（Ernie Bot）与百度搜索 AI 伙伴、阿里的通义千问与夸克 AI 搜索、字节的豆包搜索、月之暗面的 Kimi 探索版、智谱的智谱清言、商汤的商量、秘塔 AI 搜索、天工 AI 搜索、360 AI 搜索、知乎直答、纳米搜索等产品相继上线，整个国内市场在不到两年内完成了从"传统搜索 + 大模型问答"双轨到"AI 原生搜索"主流形态的过渡。这一阶段的搜索引擎正在从"返回十条蓝色链接"向"直接给出可溯源的答案"转型，同时也引出了信息准确性、内容版权归属与流量分配等三类新问题，业界与立法机构仍在持续探讨。
 
-**多模态搜索**的发展使搜索引擎不再局限于文本信息。现代搜索引擎越来越多地支持图像搜索（以图搜图）、语音搜索和视频搜索等多种模态的输入和输出。Google Lens、百度识图等产品允许用户通过拍照或上传图片进行搜索，背后依赖的是深度学习驱动的图像理解和跨模态匹配技术。未来的搜索引擎将实现文本、图像、音频、视频等多种模态信息的统一理解和检索。
-
-**AI 原生搜索引擎**的出现正在改变人们获取信息的方式。Perplexity AI、Google AI Overviews 等产品直接以对话形式回答用户问题，并提供信息来源的引用链接。这类系统将传统的"给出链接列表"模式转变为"直接给出答案"模式，代表了搜索引擎从"检索工具"向"知识助手"的转型。然而，AI 搜索也带来了信息准确性、内容版权和流量分配等新的挑战，如何平衡 AI 生成与原始来源的展示是行业面临的重要问题。
+回顾这条 60 余年的演进主线可以看出，从 TF-IDF 到 RAG，每一次技术跃迁背后都是对前一阶段局限的工程化回应：VSM 解决了排序，PageRank 引入了 Web 结构信号，BM25 修正了长文档偏差，BERT 引入了上下文语义，RAG 引入了生成式答案。本课程设计聚焦的是这条线上最早的稀疏检索阶段，目标是把 TF-IDF + 余弦相似度的完整链路从数据预处理到 Web 界面亲手实现一遍，建立对 IR 基础理论的工程直觉，进而以此为参照理解后续每一阶段的取舍与改进。
 
 ## 2 搜索引擎基础
 
@@ -130,6 +128,8 @@ $$\text{BM25}(q, d) = \sum_{t \in q} \text{idf}_t \cdot \frac{f_{t,d} \cdot (k_1
 
 其中 $k_1$ 和 $b$ 为可调参数，$|d|$ 为文档长度，$avgdl$ 为平均文档长度。$k_1$ 控制词频饱和的速度（典型值 1.2），$b$ 控制文档长度归一化的程度（典型值 0.75）。BM25 至今仍是搜索引擎领域的强基线方法，在许多实际场景中仍有优异表现。
 
+综合三种模型的特点，本系统采用**布尔过滤 + 向量空间模型排序**的混合策略：先以布尔模型或短语匹配筛选候选文档子集（保证查询语义的精确控制），再用 TF-IDF 余弦相似度对候选集排序（保证结果按相关度递减）。这一策略也是 Lucene、Elasticsearch 等工业搜索引擎的典型实现思路。本系统未实现 BM25 概率模型；如未来对长文档检索效果有更高要求，可在 TF-IDF 基础上引入 BM25 的文档长度归一化项 $b \cdot |d| / avgdl$ 平滑长度偏差。
+
 ## 3 搜索引擎设计
 
 ### 3.1 设计思路
@@ -147,19 +147,34 @@ $$\text{BM25}(q, d) = \sum_{t \in q} \text{idf}_t \cdot \frac{f_{t,d} \cdot (k_1
 5. **短语查询**：利用位置信息实现连续短语的精确匹配。
 6. **文档评分**：TF-IDF 余弦相似度排序，预计算文档模长加速。
 7. **查询扩展**：基于 WordNet 的同义词扩展，提高检索召回率。
-8. **Web 界面**：布尔检索、短语查询、查询扩展、索引浏览四页。
+8. **发音矫正**：基于 Soundex 编码的拼写容错，把发音相近的查询词映射回词典词。
+9. **Web 界面**：布尔检索、短语查询、查询扩展、发音矫正、索引浏览五页。
 
 系统数据流为：Cranfield XML 数据文件经解析器提取后，由预处理器进行文本规范化，然后构建倒排索引。用户查询经相同的预处理流程后，由对应的检索引擎在索引中执行匹配，匹配结果经 TF-IDF 排序后通过 FastAPI 返回前端渲染展示。
 
 ### 3.2 文档集获取
 
-本系统使用 Cranfield 数据集[14]，这是信息检索领域最经典的测试集之一，广泛用于检索算法的评估。该数据集由 Cleverdon 于 1960 年代在 Cranfield 航空学院创建，是信息检索实验评估方法论的奠基之作。数据集包含：
+本系统使用 Cranfield 数据集[14]，这是信息检索领域最经典的测试集之一，广泛用于检索算法的评估。该数据集由 Cleverdon 于 1960 年代在 Cranfield 航空学院创建，是信息检索实验评估方法论的奠基之作。数据集的三个组成部分如表 1 所示。
 
-- **文档集**：1400 篇航空动力学领域的论文摘要（`cran.all.1400.xml`）。
-- **查询集**：225 条标准查询（`cran.qry.xml`）。
-- **相关性判断**：1837 条人工标注的相关性判断（`cranqrel.txt`），记录了每条查询与相关文档之间的关联关系。
+: 表 1  Cranfield 数据集组成
 
-文档以 XML 格式存储，每篇文档包含编号（`docno`）、标题（`title`）、作者（`author`）、出处（`bib`）和摘要正文（`text`）五个字段。由于原始 Cranfield 数据为 SGML 格式且没有统一的根元素，本系统在解析时为其添加虚拟根标签以形成合法的 XML 文档。
+| 文件 | 内容 | 规模 |
+|:-----|:-----|:-----|
+| `cran.all.1400.xml` | 航空动力学论文摘要 | 1400 篇 |
+| `cran.qry.xml` | 标准查询 | 225 条 |
+| `cranqrel.txt` | 人工相关性判断 | 1837 条 |
+
+文档以 XML 格式存储，每篇文档包含编号、标题、作者、出处和摘要正文五个字段，含义如表 2 所示。由于原始 Cranfield 数据为 SGML 格式且没有统一的根元素，本系统在解析时为其添加虚拟根标签以形成合法的 XML 文档。
+
+: 表 2  Cranfield 文档字段
+
+| 字段 | 含义 |
+|:-----|:-----|
+| `docno` | 文档编号（1–1400） |
+| `title` | 论文标题 |
+| `author` | 作者 |
+| `bib` | 出处（期刊、卷期、年份） |
+| `text` | 摘要正文 |
 
 解析核心代码：
 
@@ -244,7 +259,16 @@ class Preprocessor:
 
 #### 3.3.4 预处理结果分析
 
-经预处理后，数据集包含 4682 个唯一词项，文档平均长度为 100.7 个词项。图 3 展示了词频的 Zipf 分布，图 4 展示了文档频率的分布，图 5 展示了文档长度的分布，图 6 展示了出现频率最高的 20 个词项。
+经预处理后得到的索引规模与文档统计特征如表 3 所示。图 3 展示了词频的 Zipf 分布，图 4 展示了文档频率的分布，图 5 展示了文档长度的分布，图 6 展示了出现频率最高的 20 个词项。
+
+: 表 3  预处理后索引与文档统计指标
+
+| 指标 | 数值 |
+|:-----|:-----|
+| 唯一词项数 | 4682 |
+| 文档平均长度（词项） | 100.7 |
+| 文档频率中位数 | 2 |
+| 最大文档频率 | 730（约 52%） |
 
 ![图 3  词频与排名的 Zipf 分布](figures/zipf_distribution.png){width=6.5cm}
 
@@ -254,7 +278,11 @@ class Preprocessor:
 
 ![图 6  出现频率最高的 20 个词项](figures/top20_terms.png){width=6.5cm}
 
-从图 3 可以看出，词频分布近似符合 Zipf 定律（Zipf's Law）[16]，即词项的频率与其频率排名成反比。在双对数坐标下，数据点近似呈线性分布，这与 Zipf 定律的预测一致。Zipf 定律揭示了自然语言文本中词项分布的普遍规律：少量词项具有极高的频率，而大量词项仅出现一两次。
+从图 3 可以看出，词频分布近似符合 Zipf 定律（Zipf's Law）[16]，即词项的频率与其在频率序列中的排名成反比，可形式化为：
+
+$$f(r) \propto \frac{1}{r^s}, \quad s \approx 1$$
+
+其中 $r$ 为词项按频率降序排列后的名次，$s$ 为反映分布陡峭程度的指数。在双对数坐标下，该关系应表现为斜率约为 $-s$ 的直线。Cranfield 数据点在头部（$r < 100$）斜率比 $-1$ 略平，说明高频词项的实际频率比理论 Zipf 略低；这是英文学术文本的常见现象，因为术语词的分布比通用语料更均匀，最高频词项被多个近义术语稀释。中后段（$r > 100$）则更接近 $-1$ 的理论斜率，符合"长尾词大多只出现一两次"的经验规律。Zipf 分布的存在直接为索引压缩、停用词剔除与 IDF 权重的合理性提供了实证依据。
 
 从图 4 可以看出，绝大多数词项的文档频率集中在低值区间（中位数 DF = 2），最大 DF 为 730（约占全部 1400 篇文档的 52%）。这说明大多数词项具有较好的区分度，仅出现在少数文档中，而少数高频词项（如通用的学术术语）分布广泛。高 DF 词项的 IDF 值较低，在 TF-IDF 排序中权重被自然压低。
 
@@ -386,6 +414,7 @@ class BooleanSearchEngine:
         tokens = self._tokenize(query)
         if not tokens:
             return set()
+        # 入口走最低优先级（OR），递归向下依次进入更高优先级
         result, _ = self._parse_or(tokens, 0)
         return result
 
@@ -393,6 +422,9 @@ class BooleanSearchEngine:
         query = re.sub(r"([()])", r" \1 ", query)
         return query.split()
 
+    # 嵌套调用顺序决定运算符优先级：
+    # _parse_or → _parse_and → _parse_not → _parse_atom
+    # 越靠近叶节点优先级越高：NOT 最高、AND 次之、OR 最低，与文献惯例一致。
     def _parse_or(self, tokens, pos):
         left, pos = self._parse_and(tokens, pos)
         while pos < len(tokens) and tokens[pos].upper() == "OR":
@@ -572,23 +604,25 @@ class TFIDFRanker:
 
 ```python
 def _rank(self, query_terms, doc_ids, top_k):
-    # 计算查询向量权重
+    # 单次计算每个词的 IDF，避免在文档循环里重复算
     query_weights = {}
+    idf_cache = {}
     for term in set(query_terms):
         if term in self.index.index:
-            tf = 1 + math.log10(query_terms.count(term))
             idf = math.log10(self.N / len(self.index.index[term]))
+            tf = 1 + math.log10(query_terms.count(term))
+            idf_cache[term] = idf
             query_weights[term] = tf * idf
 
     query_norm = math.sqrt(sum(w * w for w in query_weights.values()))
     if query_norm == 0:
         return []
 
-    # 累加文档-查询点积
+    # 累加文档-查询点积，IDF 直接复用 idf_cache
     scores = {}
     for term, q_weight in query_weights.items():
+        idf = idf_cache[term]
         postings = self.index.index[term]
-        idf = math.log10(self.N / len(postings))
         for doc_id, positions in postings.items():
             if doc_ids is not None and doc_id not in doc_ids:
                 continue
@@ -672,7 +706,7 @@ class QueryExpander:
 
 #### 3.7.2 发音矫正（Soundex）
 
-**功能实现。** WordNet 扩展解决语义层面的"词汇鸿沟"，但当用户拼写错误时（例如把 `boundary` 输成 `bounderi`），系统仍无法匹配到正确的索引词项。Soundex 是 Russell 和 Odell 在 1918 年和 1922 年的美国专利中提出的英语发音哈希算法[18]，它把拼写不同但发音相近的词映射到同一个 4 字符编码（首字母 + 3 位数字），从而将拼写纠错问题转化为一次基于编码的等价类查找。编码规则如下：
+**功能实现。** WordNet 扩展解决语义层面的"词汇鸿沟"，但当用户拼写错误时（例如把 `boundary` 输成 `bounderi`），系统仍无法匹配到正确的索引词项。Soundex 是 Russell 和 Odell 在 1918 年和 1922 年的美国专利中提出的英语发音哈希算法[18, 19]，它把拼写不同但发音相近的词映射到同一个 4 字符编码（首字母 + 3 位数字），从而将拼写纠错问题转化为一次基于编码的等价类查找。编码规则如下：
 
 1. 保留单词首字母（大写）。
 2. 将后续辅音按发音映射为数字：BFPV→1；CGJKQSXZ→2；DT→3；L→4；MN→5；R→6。
@@ -762,26 +796,23 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 
 #### 3.8.2 API 设计
 
-系统提供以下 RESTful API 端点：
+系统对外提供 9 个 RESTful 端点，分为检索、索引浏览和辅助三类，详见表 4。
 
-**检索类 API：**
+: 表 4  系统对外 API 端点
 
-- `POST /api/search/boolean` — 布尔检索。接收查询字符串和 `top_k` 参数，返回匹配文档数、排序结果列表（包含文档 ID、标题、作者、摘要片段、余弦相似度分数和高亮后的标题/摘要）。
-- `POST /api/search/phrase` — 短语查询。接口格式同布尔检索，返回包含指定短语的文档列表。
-- `POST /api/search/expanded` — 查询扩展检索。额外接收 `max_synonyms` 参数，返回结果中包含同义词映射关系和扩展后的查询词列表。
+| 端点 | 方法 | 用途 |
+|:-----|:-----|:-----|
+| `/api/search/boolean` | POST | 布尔检索（AND/OR/NOT） |
+| `/api/search/phrase` | POST | 短语查询 |
+| `/api/search/expanded` | POST | WordNet 同义词扩展检索 |
+| `/api/search/soundex` | POST | Soundex 发音矫正检索 |
+| `/api/index/dictionary` | GET | 词典浏览（支持分页与前缀过滤） |
+| `/api/index/postings/{term}` | GET | 指定词项的倒排记录表 |
+| `/api/documents/{doc_id}` | GET | 文档详情（可附带高亮词项） |
+| `/api/health` | GET | 健康检查 |
+| `/api/queries` | GET | 获取 Cranfield 标准查询列表 |
 
-**索引浏览类 API：**
-
-- `GET /api/index/dictionary` — 获取词典。支持 `page`、`size` 分页参数和 `search` 前缀过滤参数，返回词项列表（词项、文档频率、总词频）。
-- `GET /api/index/postings/{term}` — 获取指定词项的倒排记录表。返回词项的词干形式、文档频率和详细的倒排记录（文档 ID、词频、位置列表）。
-- `GET /api/documents/{doc_id}` — 获取指定文档的详细信息。支持 `highlight_terms` 参数，返回带高亮标记的标题和正文。
-
-**辅助类 API：**
-
-- `GET /api/health` — 健康检查，返回系统状态和文档总数。
-- `GET /api/queries` — 获取 Cranfield 标准查询列表。
-
-所有 API 的请求和响应均通过 Pydantic 模型定义数据结构，FastAPI 自动进行数据验证和序列化。高亮功能在服务端完成：后端的 `highlight_text` 函数在文本中为匹配词项注入 `<mark>` HTML 标签，前端通过 Vue 的 `v-html` 指令渲染高亮效果。由于 Cranfield 数据集是静态的可信数据，不存在 XSS 风险。
+检索类端点统一接收 `query` 与 `top_k` 参数，返回匹配文档数、排序后的结果列表（含文档 ID、标题、作者、摘要片段、余弦相似度分数与高亮后的标题/摘要）；扩展检索类端点额外返回扩展词或候选词的映射关系。所有 API 的请求和响应均通过 Pydantic 模型定义数据结构，FastAPI 自动进行数据验证和序列化。高亮功能在服务端完成：后端的 `highlight_text` 函数在文本中为匹配词项注入 `<mark>` HTML 标签，前端通过 Vue 的 `v-html` 指令渲染高亮效果。由于 Cranfield 数据集是静态的可信数据，不存在 XSS 风险。
 
 #### 3.8.3 界面展示
 
@@ -799,11 +830,67 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 
 ![图 16  词典浏览与倒排记录表](figures/ui_index_viewer.png){width=13cm}
 
+### 3.9 系统效果评估
+
+#### 3.9.1 评估方法与指标
+
+为定量验证检索效果，本系统在 Cranfield 标准评估集（225 条查询、1837 条人工相关性判断）上对 TF-IDF 余弦相似度排序的全文档检索进行评估。需要说明的是，原始 `cranqrel.txt` 中查询编号采用 1–225 的位置序号，而 `cran.qry.xml` 的 `<num>` 字段为 1–365 的非连续值（存在跳号），评估时按出现顺序为查询重新编号以与 qrels 对齐。
+
+采用以下四类标准 IR 评估指标[1]：
+
+**平均精度均值（MAP, Mean Average Precision）** 衡量整体排序质量。对单条查询 $q$，先计算其平均精度 $\text{AP}(q)$，再在所有查询上取平均：
+
+$$\text{AP}(q) = \frac{1}{|R_q|} \sum_{k=1}^{n} P@k \cdot \mathbb{1}[d_k \in R_q], \quad \text{MAP} = \frac{1}{|Q|} \sum_{q \in Q} \text{AP}(q)$$
+
+其中 $R_q$ 为查询 $q$ 的相关文档集，$d_k$ 为排序结果中第 $k$ 位文档，$P@k$ 为前 $k$ 位的准确率。MAP 同时考虑了排序中所有相关文档的位置，对排序质量的整体反映最为综合。
+
+**前 $k$ 位准确率（P\@k）** 衡量排序结果首部的精度，即前 $k$ 位中相关文档所占比例。$k$ 取 5、10、20 反映用户在不同浏览深度下的检索体验。
+
+**R-Precision** 取前 $|R_q|$ 位的准确率，$|R_q|$ 为该查询的相关文档总数。它能在不同查询的相关文档数差异较大时提供更稳定的对比基准。
+
+**归一化折损累计增益（NDCG\@10）** 引入位置折扣，越靠后的相关文档贡献越小，公式为：
+
+$$\text{DCG@}k = \sum_{i=1}^{k} \frac{2^{\text{rel}_i} - 1}{\log_2(i + 1)}, \quad \text{NDCG@}k = \frac{\text{DCG@}k}{\text{IDCG@}k}$$
+
+其中 $\text{rel}_i$ 为第 $i$ 位文档的相关性等级，IDCG 为理想排序下的 DCG。NDCG 适用于分级相关性，但在 Cranfield 这类近似二值的标注下也是常用指标。
+
+#### 3.9.2 评估结果
+
+在 225 条标准查询上的评估结果如表 5 所示。
+
+: 表 5  TF-IDF 余弦相似度排序在 Cranfield 测试集上的检索效果
+
+| 指标 | 数值 |
+|:-----|:-----|
+| 评估查询数 | 225 |
+| MAP | 0.2764 |
+| P\@5 | 0.2898 |
+| P\@10 | 0.2218 |
+| P\@20 | 0.1493 |
+| R-Precision | 0.2620 |
+| NDCG\@10 | 0.3517 |
+
+#### 3.9.3 结果分析
+
+P\@5 = 0.290 而 P\@20 = 0.149，表明系统排序在结果首部更精准，越往后准确率衰减越明显，符合一个有效排序系统应具备的"高质量集中在头部"的特征。MAP = 0.276、R-Precision = 0.262、NDCG\@10 = 0.352 三个综合指标互相印证，说明在没有任何机器学习模型介入的前提下，仅靠经典的 log-TF + IDF 权重 + 余弦相似度，系统已能在 Cranfield 这一规模的领域语料上取得稳定的排序效果。
+
+与文献中的 Cranfield TF-IDF 基线对比[1]，本系统的 MAP 与 P\@10 处于经典 VSM 实现的合理区间。差距主要来自两个方面：一是未引入文档长度归一化的修正项（如 BM25 的 `b·|d|/avgdl`），二是未做查询端的相关反馈（如 Rocchio 算法）。这两项也是后续可优化的明确方向。
+
+需要指出，效果评估代码位于 `backend/app/eval.py`，运行 `uv run python -m app.eval` 可重新生成上述指标，原始的逐查询数据保存在 `backend/app/data/eval_results.json`，便于后续对比不同模型或参数。
+
 ## 4 课程设计体会
 
 通过本次课程设计，我们将《智能信息检索》课程中学习的布尔模型、向量空间模型、TF-IDF 权重计算、余弦相似度、倒排索引等理论知识付诸实践，从数据预处理到索引构建，从检索匹配到结果排序，完整地体验了一个搜索引擎系统的设计与开发过程。以下是我们在实现过程中的几点深刻体会。
 
 **位置索引的重要性。** 在实现短语查询时，我们深刻体会到仅凭词项的文档频率信息不够，必须记录词项在文档中的位置。位置倒排索引的存储开销虽然比普通倒排索引大数倍，但它是实现短语查询和近邻查询的前提。特别值得一提的是"去停用词后不重新编号位置"这一设计决策——这是我们在调试短语查询时发现的关键问题。最初我们在去停用词后对剩余词项重新从 0 开始编号，导致大量虚假的短语匹配。意识到这一问题后，改为保留原始位置编号，短语查询的准确性立刻得到了显著提升。这一经验让我们认识到，数据结构的设计必须充分考虑下游任务的需求。
+
+**几次踩过的坑值得记下。** 实现过程中三处不算严重却很拖时间的坑，后来回看其实都源于"想当然"。
+
+第一处是评估脚本接入 qrels 时发现 MAP 只有 0.012，严重偏离经典 TF-IDF 在 Cranfield 上的合理基线。最初怀疑是 TF 或余弦实现错了，把权重公式重新推导了一遍仍找不出问题。后来逐查询打印排序结果，发现头部命中明显合理，再对照 qrels 才发现：`cran.qry.xml` 中 `<num>` 字段是 1–365 的非连续值（存在跳号），而 `cranqrel.txt` 用的是 1–225 的位置序号。按 XML 的 `<num>` 直接匹配 qrels 把绝大多数查询的相关集对错了。改为按出现顺序重新编号后，MAP 立即回升到 0.276，符合文献基线。教训是：经典数据集的"标准"用法未必显式记录在代码里，量化指标异常时优先怀疑数据对齐而不是算法实现。
+
+第二处是 Soundex 扩展上线时，发现检索效果反而下降，相关文档被一些拼写相近但语义无关的词（如 `fail`、`fall` 替代 `flow`）顶下去。当时实现是把每个查询词的全部 5 个 Soundex 候选都塞进 TF-IDF 一起算，相当于让噪声候选与原词等权竞争。改成"检索只用 top-1 候选、其余候选仅供 UI 展示"之后效果恢复。教训是：召回策略的扩张面要受排序分数的兑现能力约束，不是候选越多越好。
+
+第三处是 TF-IDF 排序代码里我们一开始在两个循环里各算了一遍 IDF（查询权重计算、文档点积累加），代码评审时被指出冗余。虽然 Cranfield 规模下常数开销可忽略，但还是把 IDF 抽成 `idf_cache` 在两处共用——代码可读性和职责单一性比微优化重要。
 
 **词干提取的一致性。** 索引构建和查询处理必须使用完全相同的词干提取算法（Porter Stemmer）和相同的预处理流程。如果索引用 Porter Stemmer 而查询用 Lancaster Stemmer，或者索引去停用词而查询不去，都会导致查询词无法匹配索引中的词项。在本系统中，我们通过共享同一个 `Preprocessor` 实例来确保一致性。此外，Porter 词干提取的幂等性（对已词干化的词再次词干化结果不变）为系统的鲁棒性提供了额外保障。
 
@@ -853,4 +940,6 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 
 [17] Miller G A. WordNet: A Lexical Database for English[J]. Communications of the ACM, 1995, 38(11): 39-41.
 
-[18] Russell R C, Odell M K. Soundex 发音索引编码系统[P]. U.S. Patent 1,261,167, 1918-04-02; U.S. Patent 1,435,663, 1922-11-14.
+[18] Russell R C. Index[P]. U.S. Patent 1,261,167. 1918-04-02.
+
+[19] Odell M K. Index[P]. U.S. Patent 1,435,663. 1922-11-14.
