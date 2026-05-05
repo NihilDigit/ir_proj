@@ -4,8 +4,9 @@ __pycache__/
 .venv/
 *.egg-info/
 
-# Backend cache
+# Backend cache & 评估输出
 backend/app/data/*.pkl
+backend/app/data/eval_results.json
 
 # Node
 node_modules/
@@ -33,6 +34,8 @@ report/_pandoc_out.docx
 report/test_pandoc.pdf
 report/report.html
 report/*.bak
+report/.cover_source.docx
+report/_math_rendered.md
 
 # 报告产物（含手填学生信息，从源码重生成）
 report/report.docx

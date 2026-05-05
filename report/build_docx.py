@@ -852,6 +852,120 @@ def normalize_line_spacing(doc):
             sp.set(qn("w:lineRule"), "auto")
 
 
+def _set_tbl_border(tblBorders, edge, sz, val="single"):
+    """tblBorders 子元素设置：sz 单位为 1/8 pt，12=1.5pt，4=0.5pt，0+nil 表示无边框。"""
+    el = tblBorders.find(qn("w:" + edge))
+    if el is None:
+        el = OxmlElement("w:" + edge)
+        tblBorders.append(el)
+    el.set(qn("w:val"), val)
+    el.set(qn("w:sz"), str(sz))
+    el.set(qn("w:space"), "0")
+    el.set(qn("w:color"), "auto")
+
+
+def _set_cell_bottom_border(cell, sz, val="single"):
+    tcPr = cell._element.find(qn("w:tcPr"))
+    if tcPr is None:
+        tcPr = OxmlElement("w:tcPr")
+        cell._element.insert(0, tcPr)
+    tcBorders = tcPr.find(qn("w:tcBorders"))
+    if tcBorders is None:
+        tcBorders = OxmlElement("w:tcBorders")
+        tcPr.append(tcBorders)
+    bottom = tcBorders.find(qn("w:bottom"))
+    if bottom is None:
+        bottom = OxmlElement("w:bottom")
+        tcBorders.append(bottom)
+    bottom.set(qn("w:val"), val)
+    bottom.set(qn("w:sz"), str(sz))
+    bottom.set(qn("w:space"), "0")
+    bottom.set(qn("w:color"), "auto")
+
+
+def _set_keep_next(p):
+    """段落 keepNext：与下一段保持在同一页。"""
+    pPr = _ensure_pPr(p)
+    if pPr.find(qn("w:keepNext")) is None:
+        pPr.append(OxmlElement("w:keepNext"))
+
+
+def _set_row_cant_split(row):
+    """表格行 cantSplit：禁止单行内部分页。"""
+    trPr = row._element.find(qn("w:trPr"))
+    if trPr is None:
+        trPr = OxmlElement("w:trPr")
+        row._element.insert(0, trPr)
+    if trPr.find(qn("w:cantSplit")) is None:
+        trPr.append(OxmlElement("w:cantSplit"))
+
+
+def keep_tables_together(doc):
+    """表格 caption 与表格本身不跨页：caption 段落 keepNext；表格所有行 cantSplit；
+    前 N-1 行的所有段落 keepNext（最后一行不设，否则会粘连下一段正文导致空白）。"""
+    body = doc.element.body
+    elems = list(body)
+    for i, elem in enumerate(elems):
+        if elem.tag != qn("w:tbl"):
+            continue
+        # caption 段落：表格前最近的非空段落（pandoc 的 Caption 样式）
+        for j in range(i - 1, max(-1, i - 3), -1):
+            prev = elems[j]
+            if prev.tag == qn("w:p"):
+                from docx.text.paragraph import Paragraph
+                _set_keep_next(Paragraph(prev, doc))
+                break
+
+    for table in doc.tables:
+        rows = list(table.rows)
+        for ri, row in enumerate(rows):
+            _set_row_cant_split(row)
+            if ri < len(rows) - 1:
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        _set_keep_next(p)
+
+
+def style_three_line_tables(doc):
+    """三线表：顶/底线 1.5pt，表头与数据之间 0.5pt，其它边无线；表格水平居中、单元格内容居中。"""
+    for table in doc.tables:
+        tbl = table._element
+
+        # 1. 重置表格级边框
+        tblPr = tbl.find(qn("w:tblPr"))
+        if tblPr is None:
+            tblPr = OxmlElement("w:tblPr")
+            tbl.insert(0, tblPr)
+        for old in tblPr.findall(qn("w:tblBorders")):
+            tblPr.remove(old)
+        tblBorders = OxmlElement("w:tblBorders")
+        tblPr.append(tblBorders)
+        _set_tbl_border(tblBorders, "top", 12, "single")
+        _set_tbl_border(tblBorders, "bottom", 12, "single")
+        for edge in ("left", "right", "insideH", "insideV"):
+            _set_tbl_border(tblBorders, edge, 0, "nil")
+
+        # 2. 表格水平居中
+        for old in tblPr.findall(qn("w:jc")):
+            tblPr.remove(old)
+        jc = OxmlElement("w:jc")
+        jc.set(qn("w:val"), "center")
+        tblPr.append(jc)
+
+        # 3. 表头行底边框：0.5pt single（每个 header cell）
+        if table.rows:
+            for cell in table.rows[0].cells:
+                _set_cell_bottom_border(cell, 4, "single")
+
+        # 4. 单元格内容水平居中
+        for row in table.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    pPr = _ensure_pPr(p)
+                    _clear_indent(pPr)  # 取消首行缩进，避免与居中冲突
+                    _set_jc(pPr, "center")
+
+
 def apply_first_line_indent(doc):
     """段落级首行缩进控制：
     - 正文段落：强制加 2 字符首行缩进（覆盖 pandoc 的 ind=0）。
@@ -1107,6 +1221,8 @@ def main():
     override_code_style(doc)
     override_list_styles(doc)
     normalize_line_spacing(doc)
+    style_three_line_tables(doc)
+    keep_tables_together(doc)
     fix_abstract_layout(doc)
     apply_first_line_indent(doc)
     insert_chapter_page_breaks(doc)
