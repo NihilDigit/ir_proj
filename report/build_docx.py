@@ -1168,6 +1168,58 @@ def linkify_references(doc):
                 break  # restart scan
 
 
+def apply_math_font(doc):
+    """让 OMML 公式在 Word 里走 Cambria Math 渲染。
+
+    pandoc 输出的 OMML 节点不带任何字体声明，settings.xml 也没有 mathPr。
+    Word 桌面版有 fallback 默认用 Cambria Math，但显式声明更稳；其它渲染器
+    （LibreOffice 等）没有 fallback，会回退到段落字体（Times New Roman），
+    没有 OpenType MATH 表，下标位置和操作符间距就乱。
+
+    两步注入：
+      1. settings.xml 加 <m:mathPr> 全局公式属性（含 mathFont = Cambria Math）。
+      2. 每个 <m:r> 加 <w:rPr><w:rFonts ascii=hAnsi="Cambria Math"/></w:rPr>，
+         位置在 <m:rPr> 之后、<m:t> 之前（按 OOXML schema 顺序）。
+    """
+    # 1. settings.xml
+    settings_el = doc.settings.element
+    for old in settings_el.findall(qn("m:mathPr")):
+        settings_el.remove(old)
+    mathPr = OxmlElement("m:mathPr")
+    for tag, val in (
+        ("m:mathFont", "Cambria Math"),
+        ("m:brkBin", "before"),
+        ("m:smallFrac", "0"),
+        ("m:lMargin", "0"),
+        ("m:rMargin", "0"),
+        ("m:defJc", "centerGroup"),
+        ("m:wrapIndent", "1440"),
+        ("m:intLim", "subSup"),
+        ("m:naryLim", "undOvr"),
+    ):
+        el = OxmlElement(tag)
+        el.set(qn("m:val"), val)
+        mathPr.append(el)
+    mathPr.append(OxmlElement("m:dispDef"))
+    settings_el.append(mathPr)
+
+    # 2. document.xml: 每个 m:r 注入 w:rPr
+    body = doc.element.body
+    for mr in body.iter(qn("m:r")):
+        if mr.find(qn("w:rPr")) is not None:
+            continue
+        wrPr = OxmlElement("w:rPr")
+        rFonts = OxmlElement("w:rFonts")
+        rFonts.set(qn("w:ascii"), "Cambria Math")
+        rFonts.set(qn("w:hAnsi"), "Cambria Math")
+        wrPr.append(rFonts)
+        m_rPr = mr.find(qn("m:rPr"))
+        if m_rPr is not None:
+            m_rPr.addnext(wrPr)
+        else:
+            mr.insert(0, wrPr)
+
+
 def enable_update_fields_on_open(doc):
     """让 Word/LibreOffice 首次打开时自动更新 TOC 等域。"""
     settings = doc.settings.element
@@ -1227,6 +1279,7 @@ def main():
     apply_first_line_indent(doc)
     insert_chapter_page_breaks(doc)
     linkify_references(doc)
+    apply_math_font(doc)
     enable_update_fields_on_open(doc)
 
     # Step 3: 封面

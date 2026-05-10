@@ -34,11 +34,10 @@ Both servers must run simultaneously. Vite proxies `/api` requests to the backen
 
 **日常迭代用 `rebuild_keep_cover.py`**, 它会自动:
 1. 把当前 `report.docx` 的封面 12 段快照保存为 `.cover_source.docx`
-2. 跑 `render_math.py` 用 LaTeX 把所有块级公式 `$$...$$` 预渲染成 PNG (写入 `figures/eq_*.png`, sha1 缓存), 输出 `_math_rendered.md`
-3. 跑 `build_docx.py`, 但封面源指向快照、md 源指向渲染后的 md
+2. 跑 `build_docx.py`, 但封面源指向快照而不是模板
 
 ```bash
-uv run rebuild_keep_cover.py                      # 推荐: 保留手改的封面 + 公式预渲染 + 完整重建
+uv run rebuild_keep_cover.py                      # 推荐: 保留手改的封面 + 完整重建
 python3 uno_export_pdf.py report.docx report.pdf  # docx → pdf via LibreOffice UNO (system python)
 
 # 辅助脚本:
@@ -93,23 +92,22 @@ frontend/src/components/
 
 report/
 ├── report.md / report.docx / report.pdf
-├── rebuild_keep_cover.py # 入口: 快照封面 + 渲染公式 + 调 build_docx
-├── render_math.py        # LaTeX 块级公式 $$...$$ → figures/eq_NN_<sha1>.png (sha1 缓存)
-├── build_docx.py         # Markdown → docx (cover, TOC, styles, code blocks, 三线表)
+├── rebuild_keep_cover.py # 入口: 快照封面 + 调 build_docx
+├── build_docx.py         # Markdown → docx (cover, TOC, styles, code blocks, 三线表, 公式字体注入)
 ├── patch_docx.py         # Targeted edits to existing docx after md changes
 ├── uno_export_pdf.py     # docx → pdf via LibreOffice UNO bridge (system python)
 ├── gen_figures.py        # PlotNine statistical charts → figures/
 ├── theme_ir.py           # Shared PlotNine theme
 ├── flows/gen_flows.py    # Graphviz pipeline diagrams → figures/
 ├── capture_ui.sh         # Headless screenshots of the running frontend
-├── demo_script.md        # Demo recording script
-└── _math_rendered.md     # Auto-generated: report.md with $$...$$ replaced by image refs (gitignored)
+└── demo_script.md        # Demo recording script
 ```
 
 `build_docx.py` 的几个非显然处理:
 - `style_three_line_tables()` — 把 pandoc 默认的方格表改为三线表(顶/底 1.5pt、表头 0.5pt、单元格水平居中、整表居中)
 - `keep_tables_together()` — caption 段落 `<w:keepNext/>`、表格行 `<w:cantSplit/>`, 防止 caption 与表身被分页割裂
 - `insert_cover()` — 从 `TEMPLATE_FILE` 复制前 12 段作为封面; `rebuild_keep_cover.py` 把这个常量指向 `.cover_source.docx`(用户手改过的封面)而不是模板, 实现"重建保留封面"
+- `apply_math_font()` — 给 OMML 公式注入 Cambria Math 字体声明: `settings.xml` 加全局 `<m:mathPr>`, 每个 `<m:r>` 加 `<w:rPr><w:rFonts ascii=hAnsi="Cambria Math"/></w:rPr>`; pandoc 输出的 OMML 不带任何字体声明, Word 桌面版有 fallback 但其它渲染器没有, 不补就会回退到段落字体导致下标错位
 
 ## Key Design Decisions
 
@@ -121,4 +119,4 @@ report/
 - **Soundex uses top-1 candidate only for retrieval**: each query term's other phonetic candidates are returned for UI display but not fed into TF-IDF. Stuffing all candidates into ranking would let phonetically similar but semantically unrelated words (e.g. `fail`/`fall` for `flow`) dominate scores. Candidates are ranked by longest common prefix, then length difference, then alphabet.
 - **Unified dependencies**: a single root `pyproject.toml` covers backend runtime, figure generation, and the report toolchain. The `report` dependency group (currently `python-docx`) is opt-in via `uv sync --group report` or `uv run --group report ...`.
 - **eval qid 重映射**: `cran.qry.xml` 的 `<num>` 字段是 1–365 的非连续值(有跳号), 但 `cranqrel.txt` 用位置序号 1–225。直接拿 `query.query_id` 匹配 qrels 会错位, 导致 MAP 假性偏低到 0.012。`eval.py` 按出现顺序重新编号后, MAP 回到合理基线 0.276。
-- **块级公式用 LaTeX 预渲染为 PNG**: LibreOffice 渲染 pandoc 输出的 OMML 公式时下标错位(`df_t` 的 `t` 偏低脱节、字符间距异常分散)。`render_math.py` 用 `pdflatex + pdftoppm` 把每条 `$$...$$` 渲染为 300dpi 透明 PNG(sha1 缓存, 公式不变就不重渲), 替换 md 里的公式为图片引用。Inline `$...$` 保留 OMML 不动, 因为简单公式问题不大且要保持文本流。
+- **公式全部走 OMML + Cambria Math 字体注入**: pandoc 把 `$$...$$` 和 `$...$` 都转为 OMML(`<m:oMath>` / `<m:oMathPara>`), 但不带字体声明; settings.xml 也没有全局 `<m:mathPr>`。Word 桌面版默认 fallback 到 Cambria Math 所以表面正常, LibreOffice 等其它渲染器没 fallback, 会回退到段落字体(Times New Roman / 宋体), 这两个字体没有 OpenType MATH 表, 下标位置和操作符间距全乱。`build_docx.apply_math_font()` 后处理一次性注入字体, 让 docx 在 Word 和 LO 里都正确渲染。
