@@ -39,6 +39,7 @@ report/.cover_source.docx
 # 报告产物（含手填学生信息，从源码重生成）
 report/report.docx
 report/report.pdf
+中期提交/
 
 # 打包输出
 dist/
