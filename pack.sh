@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# 打包代码与报告产物，供课程提交。
+# 打包代码，供课程提交。
 #
 # 输出：dist/ir-system-YYYYMMDD.zip
 #   · backend/           —— 后端源码
 #   · frontend/          —— 前端源码（不含 node_modules / dist）
 #   · data/              —— Cranfield 原始数据
-#   · report/            —— 报告源码 + 产物（md/docx/pdf + 生成脚本 + 图）
 #   · pyproject.toml / uv.lock / README.md / .gitignore / pack.sh
 #
-# 排除：__pycache__, .venv, node_modules, *.pkl, .git, dist, 一切 AI 相关
+# 排除：report, __pycache__, .venv, node_modules, *.pkl, .git, dist, 一切 AI 相关
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,7 +25,6 @@ zip -r "$ZIP_PATH" \
   backend/ \
   frontend/ \
   data/ \
-  report/ \
   pyproject.toml uv.lock \
   README.md \
   .gitignore pack.sh \
@@ -41,9 +39,7 @@ zip -r "$ZIP_PATH" \
   -x '*/.git/*' \
   -x '.git/*' \
   -x 'dist/*' \
-  -x 'report/_pandoc_out.docx' \
-  -x 'report/test_pandoc.pdf' \
-  -x 'report/report.html' \
+  -x 'report/*' \
   -x '.DS_Store' \
   -x 'CLAUDE.md' '*/CLAUDE.md' \
   -x '.claude/*' '*/.claude/*' '*/.claude' \

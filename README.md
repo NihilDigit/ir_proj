@@ -80,7 +80,7 @@ bun run build     # 生产构建
 ## 打包分发
 
 ```bash
-./pack.sh                   # 产出 dist/ir-system-<date>.zip
+./pack.sh                   # 产出 dist/ir-system-<date>.zip，仅包含代码与数据
 ```
 
 ## 报告构建
