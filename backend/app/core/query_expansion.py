@@ -23,12 +23,14 @@ class QueryExpander:
                         continue
                     if self.preprocessor.stemmer.stem(synonym) != stem_of_term:
                         synonyms.add(synonym)
+                    if len(synonyms) >= max_synonyms:
+                        break
                 if len(synonyms) >= max_synonyms:
                     break
-            expansion_map[term] = list(synonyms)[:max_synonyms]
+            expansion_map[term] = sorted(synonyms)[:max_synonyms]
             all_terms.update(expansion_map[term])
 
-        expanded_stemmed = list({self.preprocessor.stemmer.stem(t) for t in all_terms})
+        expanded_stemmed = sorted({self.preprocessor.stemmer.stem(t) for t in all_terms})
 
         return {
             "original_terms": query_terms,
