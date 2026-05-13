@@ -15,6 +15,7 @@ REPORT_DIR = Path(__file__).parent
 MD_FILE = REPORT_DIR / "report.md"
 FIGURES_DIR = REPORT_DIR / "figures"
 TEMPLATE_FILE = REPORT_DIR.parent / "课程设计报告模板.docx"
+EXAMPLE_FILE = REPORT_DIR.parent / "智能信息检索课程设计报告（示例）.docx"
 OUTPUT_FILE = REPORT_DIR / "report.docx"
 
 # scienceplots figures use 12cm, everything else 15cm
@@ -69,9 +70,13 @@ def _set_bold(rPr, val=True):
         if b is None:
             b = OxmlElement("w:b")
             rPr.append(b)
+        elif b.get(qn("w:val")) is not None:
+            del b.attrib[qn("w:val")]
     else:
-        if b is not None:
-            rPr.remove(b)
+        if b is None:
+            b = OxmlElement("w:b")
+            rPr.append(b)
+        b.set(qn("w:val"), "0")
 
 
 def _set_italic(rPr, val=True):
@@ -80,9 +85,13 @@ def _set_italic(rPr, val=True):
         if i is None:
             i = OxmlElement("w:i")
             rPr.append(i)
+        elif i.get(qn("w:val")) is not None:
+            del i.attrib[qn("w:val")]
     else:
-        if i is not None:
-            rPr.remove(i)
+        if i is None:
+            i = OxmlElement("w:i")
+            rPr.append(i)
+        i.set(qn("w:val"), "0")
 
 
 def _ensure_pPr(para):
@@ -334,9 +343,12 @@ def setup_header_footer(doc):
     for p in list(header.paragraphs):
         p._element.getparent().remove(p._element)
     hp = header.add_paragraph()
+    if "Header" in doc.styles:
+        hp.style = doc.styles["Header"]
     hpPr = _ensure_pPr(hp)
     _set_jc(hpPr, "center")
     _clear_indent(hpPr)
+    _set_spacing(hpPr, before=0, after=0)
     # 底边框
     pBdr = OxmlElement("w:pBdr")
     bottom = OxmlElement("w:bottom")
@@ -346,7 +358,7 @@ def setup_header_footer(doc):
     bottom.set(qn("w:color"), "auto")
     pBdr.append(bottom)
     hpPr.insert(0, pBdr)
-    hp._element.append(make_run("华北理工大学 理学院", sz=21))
+    hp._element.append(make_run("华北理工大学 理学院", sz=18))
 
     # —— 页脚：PAGE 域，居中 ——
     footer = section.footer
@@ -360,7 +372,7 @@ def setup_header_footer(doc):
     frPr = OxmlElement("w:rPr")
     fr.append(frPr)
     _set_rFonts(frPr, ascii="Times New Roman", east_asia="宋体")
-    _set_sz(frPr, 21)
+    _set_sz(frPr, 18)
     fld = OxmlElement("w:fldSimple")
     fld.set(qn("w:instr"), "PAGE \\* MERGEFORMAT")
     # fldSimple 需要包含结果 run
@@ -368,7 +380,7 @@ def setup_header_footer(doc):
     inner_rPr = OxmlElement("w:rPr")
     inner_r.append(inner_rPr)
     _set_rFonts(inner_rPr, ascii="Times New Roman", east_asia="宋体")
-    _set_sz(inner_rPr, 21)
+    _set_sz(inner_rPr, 18)
     inner_t = OxmlElement("w:t")
     inner_t.text = "1"
     inner_r.append(inner_t)
@@ -507,19 +519,39 @@ def parse_md(text):
 
 # ── cover page from template ─────────────────────────────────────────────────
 
+def _strip_page_breaks(elem):
+    """Remove copied page-break markers so rebuild_keep_cover stays idempotent."""
+    for br in list(elem.findall(".//" + qn("w:br"))):
+        if br.get(qn("w:type")) == "page":
+            parent = br.getparent()
+            if parent is not None:
+                parent.remove(br)
+    for marker in list(elem.findall(".//" + qn("w:lastRenderedPageBreak"))):
+        parent = marker.getparent()
+        if parent is not None:
+            parent.remove(marker)
+
+
 def insert_cover(doc, template_path):
-    """Copy first 14 paragraphs from template into doc, fix title + color, then page break."""
+    """Copy the cover paragraphs from template, fix title + color, then page break."""
     from docx.opc.part import Part
     from docx.opc.package import OpcPackage
     from docx.opc.packuri import PackURI
 
     tmpl = Document(str(template_path))
 
-    # Collect template image blobs keyed by rId, create NEW image parts with
+    cover_image_rids = set()
+    for idx in range(12):
+        for blip in tmpl.paragraphs[idx]._element.findall(".//" + qn("a:blip")):
+            old_rid = blip.get(qn("r:embed"))
+            if old_rid:
+                cover_image_rids.add(old_rid)
+
+    # Collect only cover image blobs keyed by rId, create NEW image parts with
     # unique names (prefixed "cover_") to avoid collisions with body images.
     rid_map = {}  # old_rid -> new_rid
     for rid, rel in tmpl.part.rels.items():
-        if "image" in rel.reltype:
+        if rid in cover_image_rids and "image" in rel.reltype:
             blob = rel.target_part.blob
             content_type = rel.target_part.content_type
             # Create a new part with a unique name
@@ -542,6 +574,34 @@ def insert_cover(doc, template_path):
     for idx in range(12):
         src = tmpl.paragraphs[idx]
         elem = copy.deepcopy(src._element)
+        _strip_page_breaks(elem)
+
+        # rebuild_keep_cover.py 会从已导出的 report.docx 继续取封面；经过
+        # LibreOffice 往返后，字符缩进有时只剩 firstLineChars/rightChars，
+        # WPS/Word 会重新估算，封面视觉重心就会偏。这里把模板中的 twip 数值
+        # 显式补回，稳定第一页布局。
+        pPr = elem.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            elem.insert(0, pPr)
+        ind = pPr.find(qn("w:ind"))
+        if ind is None:
+            ind = OxmlElement("w:ind")
+            pPr.append(ind)
+        if idx == 0:
+            ind.set(qn("w:firstLineChars"), "600")
+            ind.set(qn("w:firstLine"), "1687")
+        elif idx in (5, 6):
+            ind.set(qn("w:firstLineChars"), "448")
+            ind.set(qn("w:firstLine"), "1259")
+        elif idx in (7, 8, 9):
+            ind.set(qn("w:firstLineChars"), "300")
+            ind.set(qn("w:firstLine"), "843")
+            ind.set(qn("w:rightChars"), "189")
+            ind.set(qn("w:right"), "397")
+        elif idx in (10, 11):
+            ind.set(qn("w:firstLineChars"), "300")
+            ind.set(qn("w:firstLine"), "843")
 
         # Remap image rIds
         for blip in elem.findall(".//" + qn("a:blip")):
@@ -580,6 +640,77 @@ def insert_cover(doc, template_path):
     last_cover_p.append(break_r)
 
 
+def _new_image_part(doc, rel):
+    from docx.opc.part import Part
+    from docx.opc.packuri import PackURI
+
+    old_name = str(rel.target_part.partname)
+    ext = os.path.splitext(old_name)[1]
+    existing = {str(r.target_part.partname) for r in doc.part.rels.values()
+                if "image" in r.reltype}
+    num = 200
+    while f"/word/media/image{num}{ext}" in existing:
+        num += 1
+    new_part = Part(
+        PackURI(f"/word/media/image{num}{ext}"),
+        rel.target_part.content_type,
+        rel.target_part.blob,
+        doc.part.package,
+    )
+    return doc.part.relate_to(new_part, rel.reltype)
+
+
+def _remap_copied_image_rids(doc, source_doc, elem):
+    rid_map = {}
+    for blip in elem.findall(".//" + qn("a:blip")):
+        old_rid = blip.get(qn("r:embed"))
+        if not old_rid:
+            continue
+        if old_rid not in rid_map:
+            rid_map[old_rid] = _new_image_part(doc, source_doc.part.rels[old_rid])
+        blip.set(qn("r:embed"), rid_map[old_rid])
+
+
+def insert_teacher_review_block(doc, example_path=EXAMPLE_FILE):
+    """Copy the example second-page teacher review XML before the TOC."""
+    example = Document(str(example_path))
+    copied = []
+
+    for idx, para in enumerate(example.paragraphs):
+        elem = para._element
+        found_review_box = any(
+            extent.get("cx") == "5441950" and extent.get("cy") == "1885950"
+            for extent in elem.findall(".//" + qn("wp:extent"))
+        )
+        if found_review_box:
+            start = max(0, idx - 1)
+            end = min(len(example.paragraphs), idx + 2)
+            copied = [copy.deepcopy(example.paragraphs[i]._element)
+                      for i in range(start, end)]
+            break
+
+    if not copied:
+        raise RuntimeError("teacher review XML block not found in example docx")
+
+    body = doc.element.body
+    insert_at = 12
+    for offset, elem in enumerate(copied):
+        _strip_page_breaks(elem)
+        _remap_copied_image_rids(doc, example, elem)
+        if elem.find(".//" + qn("wp:extent")) is not None:
+            pPr = elem.find(qn("w:pPr"))
+            if pPr is None:
+                pPr = OxmlElement("w:pPr")
+                elem.insert(0, pPr)
+            for ind in pPr.findall(qn("w:ind")):
+                pPr.remove(ind)
+            ind = OxmlElement("w:ind")
+            ind.set(qn("w:firstLineChars"), "0")
+            ind.set(qn("w:firstLine"), "0")
+            pPr.append(ind)
+        body.insert(insert_at + offset, elem)
+
+
 # ── pandoc 转换 + 后处理 ─────────────────────────────────────────────────────
 
 def run_pandoc(md_file, out_file):
@@ -603,9 +734,39 @@ def _find_style_by_id(doc, style_id):
     return None
 
 
+def _ensure_character_style(doc, style_id, name):
+    style = _find_style_by_id(doc, style_id)
+    if style is not None:
+        return style.element
+    el = OxmlElement("w:style")
+    el.set(qn("w:type"), "character")
+    el.set(qn("w:styleId"), style_id)
+    name_el = OxmlElement("w:name")
+    name_el.set(qn("w:val"), name)
+    el.append(name_el)
+    el.append(OxmlElement("w:qFormat"))
+    doc.styles.element.append(el)
+    return el
+
+
 def _strip_color(rPr):
     for c in rPr.findall(qn("w:color")):
         rPr.remove(c)
+
+
+def _set_color(rPr, val="000000"):
+    _strip_color(rPr)
+    col = OxmlElement("w:color")
+    col.set(qn("w:val"), val)
+    rPr.append(col)
+
+
+def _clear_underline(rPr):
+    for u in rPr.findall(qn("w:u")):
+        rPr.remove(u)
+    u = OxmlElement("w:u")
+    u.set(qn("w:val"), "none")
+    rPr.append(u)
 
 
 def override_heading_styles(doc):
@@ -693,6 +854,57 @@ def override_heading_styles(doc):
             style.element.insert(0, pPr)
         _set_jc(pPr, "center")
         _clear_indent(pPr)
+
+
+def override_toc_styles(doc):
+    """显式设置目录字体，避免 Word/LibreOffice 使用默认主题字体。"""
+    # 目录标题：按示例 14pt、居中，不额外加粗。
+    toch = _find_style_by_id(doc, "TOCHeading")
+    if toch is not None:
+        rPr = _ensure_rPr(toch.element)
+        _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+        _set_sz(rPr, 28)
+        _set_bold(rPr, False)
+        _set_italic(rPr, False)
+        _set_color(rPr, "000000")
+        _clear_underline(rPr)
+        pPr = toch.element.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            toch.element.insert(0, pPr)
+        _set_jc(pPr, "center")
+        _clear_indent(pPr)
+
+    # Pandoc 生成后由 LibreOffice 更新时会用 TOC2/TOC3 + IndexLink；
+    # Word 也可能使用 TOC1/TOC2/TOC3。这里全部显式指定为正文目录字体。
+    for sid in ("TOC1", "TOC2", "TOC3", "10", "20", "30", "Index"):
+        style = _find_style_by_id(doc, sid)
+        if style is None:
+            continue
+        rPr = _ensure_rPr(style.element)
+        _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+        _set_sz(rPr, 21)
+        _set_bold(rPr, False)
+        _set_italic(rPr, False)
+        _set_color(rPr, "000000")
+        _clear_underline(rPr)
+        pPr = style.element.find(qn("w:pPr"))
+        if pPr is None:
+            pPr = OxmlElement("w:pPr")
+            style.element.insert(0, pPr)
+        _set_spacing(pPr, before=0, after=0, line=300)
+
+    _ensure_character_style(doc, "IndexLink", "Index Link")
+    for sid in ("IndexLink", "Hyperlink"):
+        style = _find_style_by_id(doc, sid)
+        style_el = style.element if style is not None else _ensure_character_style(doc, sid, sid)
+        rPr = _ensure_rPr(style_el)
+        _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+        _set_sz(rPr, 21)
+        _set_bold(rPr, False)
+        _set_italic(rPr, False)
+        _set_color(rPr, "000000")
+        _clear_underline(rPr)
 
 
 def override_body_styles(doc):
@@ -1257,6 +1469,46 @@ def fix_body_indent(doc):
             _set_indent(pPr, first_line_chars=200, first_line=480)
 
 
+def apply_toc_direct_format(doc):
+    """给已经展开的目录条目加直接字体格式，抵消域刷新后的样式漂移。"""
+    body = doc.element.body
+    for sdt in body.findall(qn("w:sdt")):
+        sdt_pr = sdt.find(qn("w:sdtPr"))
+        if sdt_pr is None or sdt_pr.find(".//" + qn("w:docPartGallery")) is None:
+            continue
+        gallery = sdt_pr.find(".//" + qn("w:docPartGallery"))
+        if gallery.get(qn("w:val")) != "Table of Contents":
+            continue
+        for p in sdt.iter(qn("w:p")):
+            text = _p_text(p).strip()
+            if not text:
+                continue
+            pPr = p.find(qn("w:pPr"))
+            if pPr is None:
+                pPr = OxmlElement("w:pPr")
+                p.insert(0, pPr)
+            if text == "目录":
+                _set_jc(pPr, "center")
+                _clear_indent(pPr)
+                for r in p.iter(qn("w:r")):
+                    rPr = _ensure_rPr(r)
+                    _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+                    _set_sz(rPr, 28)
+                    _set_bold(rPr, False)
+                    _set_italic(rPr, False)
+                    _set_color(rPr, "000000")
+                    _clear_underline(rPr)
+            else:
+                for r in p.iter(qn("w:r")):
+                    rPr = _ensure_rPr(r)
+                    _set_rFonts(rPr, ascii="Times New Roman", east_asia="宋体")
+                    _set_sz(rPr, 21)
+                    _set_bold(rPr, False)
+                    _set_italic(rPr, False)
+                    _set_color(rPr, "000000")
+                    _clear_underline(rPr)
+
+
 def main():
     # Step 1: pandoc 生成主体
     pandoc_out = REPORT_DIR / "_pandoc_out.docx"
@@ -1269,6 +1521,7 @@ def main():
     setup_page(doc)
     setup_header_footer(doc)
     override_heading_styles(doc)
+    override_toc_styles(doc)
     override_body_styles(doc)
     override_code_style(doc)
     override_list_styles(doc)
@@ -1281,9 +1534,11 @@ def main():
     linkify_references(doc)
     apply_math_font(doc)
     enable_update_fields_on_open(doc)
+    apply_toc_direct_format(doc)
 
     # Step 3: 封面
     insert_cover(doc, TEMPLATE_FILE)
+    insert_teacher_review_block(doc)
 
     doc.save(str(OUTPUT_FILE))
     pandoc_out.unlink(missing_ok=True)
