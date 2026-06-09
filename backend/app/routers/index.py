@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Request
 
-from ..models import DictionaryResponse, PostingsResponse, PostingsEntry, DocumentResponse
+from ..models import (
+    DictionaryResponse,
+    PostingsResponse,
+    PostingsEntry,
+    PostingContext,
+    DocumentResponse,
+)
 from ..core.highlighter import highlight_text
 
 router = APIRouter()
@@ -8,20 +14,55 @@ router = APIRouter()
 
 @router.get("/index/dictionary", response_model=DictionaryResponse)
 async def get_dictionary(
-    request: Request, page: int = 1, size: int = 50, search: str = ""
+    request: Request, page: int = 1, size: int = 50, search: str = "", letter: str = ""
 ):
     engine = request.app.state.engine
-    terms, total = engine.index.get_dictionary(search=search, page=page, size=size)
+    terms, total = engine.index.get_dictionary(
+        search=search, page=page, size=size, letter=letter
+    )
     return DictionaryResponse(total=total, page=page, size=size, terms=terms)
+
+
+def _posting_contexts(engine, doc, stemmed_term: str, positions: list[int], window: int = 4):
+    tokens = engine.index.preprocessor.tokenize(doc.title + " " + doc.text)
+    contexts = []
+    for pos in positions:
+        if pos < 0 or pos >= len(tokens):
+            continue
+        start = max(0, pos - window)
+        end = min(len(tokens), pos + window + 1)
+        parts = []
+        for i in range(start, end):
+            if i == pos:
+                parts.append(f"<mark>{stemmed_term}[{pos}]</mark>")
+            else:
+                parts.append(tokens[i])
+        contexts.append(PostingContext(position=pos, html=" ".join(parts)))
+    return contexts
 
 
 @router.get("/index/postings/{term}", response_model=PostingsResponse)
 async def get_postings(term: str, request: Request):
     engine = request.app.state.engine
-    stemmed = engine.index.preprocessor.stemmer.stem(term.lower())
+    normalized = term.lower()
+    stemmed = (
+        normalized
+        if normalized in engine.index.index
+        else engine.index.preprocessor.stemmer.stem(normalized)
+    )
     raw_postings = engine.index.index.get(stemmed, {})
     postings = [
-        PostingsEntry(doc_id=doc_id, tf=len(positions), positions=positions)
+        PostingsEntry(
+            doc_id=doc_id,
+            title=engine.index.documents[doc_id].title,
+            author=engine.index.documents[doc_id].author,
+            bib=engine.index.documents[doc_id].bib,
+            tf=len(positions),
+            positions=positions,
+            contexts=_posting_contexts(
+                engine, engine.index.documents[doc_id], stemmed, positions
+            ),
+        )
         for doc_id, positions in sorted(raw_postings.items())
     ]
     return PostingsResponse(

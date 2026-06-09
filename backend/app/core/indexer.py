@@ -33,11 +33,20 @@ class InvertedIndex:
         stemmed = self.preprocessor.stemmer.stem(term.lower())
         return self.index.get(stemmed, {})
 
-    def get_dictionary(self, search: str = "", page: int = 1, size: int = 50) -> tuple[list[dict], int]:
+    def get_dictionary(
+        self, search: str = "", page: int = 1, size: int = 50, letter: str = ""
+    ) -> tuple[list[dict], int]:
         items = []
+        normalized_letter = letter.lower()
         for term, postings in sorted(self.index.items()):
             if search and not term.startswith(search.lower()):
                 continue
+            if not search and normalized_letter and normalized_letter != "all":
+                if normalized_letter == "#":
+                    if term and term[0].isalpha():
+                        continue
+                elif not term.startswith(normalized_letter):
+                    continue
             df = len(postings)
             tf_total = sum(len(positions) for positions in postings.values())
             items.append({"term": term, "df": df, "total_freq": tf_total})

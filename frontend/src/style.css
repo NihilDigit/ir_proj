@@ -38,9 +38,32 @@ body {
 
 /* ── Layout ── */
 #app {
-  max-width: 980px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 0 24px 48px;
+}
+
+#app:has(.index-page) {
+  height: 100dvh;
+  overflow: hidden;
+  padding-bottom: 24px;
+}
+
+.app:has(.index-page) {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app:has(.index-page) header {
+  flex: 0 0 auto;
+}
+
+.app:has(.index-page) main {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
 }
 
 /* ── Header ── */
@@ -94,6 +117,14 @@ nav a.router-link-active {
 /* ── Search Page ── */
 .search-page {
   animation: fadeIn 0.2s ease;
+}
+
+.index-page {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 
 @keyframes fadeIn {
@@ -432,10 +463,111 @@ mark {
 }
 
 /* ── Dictionary & Tables ── */
+.index-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.dictionary-pane,
+.postings-pane {
+  min-width: 0;
+  height: 100%;
+}
+
+.dictionary-pane {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.index-search {
+  margin-bottom: 10px;
+  flex: 0 0 auto;
+}
+
+.index-search .btn-search {
+  padding-inline: 16px;
+}
+
+.alphabet-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  flex: 0 0 auto;
+}
+
+.alpha-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.alpha-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.alpha-item,
+.alpha-arrow {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px 2px;
+  transition: color var(--transition), background var(--transition);
+}
+
+.alpha-item:hover,
+.alpha-arrow:hover {
+  color: var(--primary);
+}
+
+.alpha-item.active {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.alpha-arrow {
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.alpha-arrow:hover {
+  background: var(--primary-soft);
+}
+
 .dict-info {
   font-size: 13px;
   color: var(--text-secondary);
   margin-bottom: 12px;
+  flex: 0 0 auto;
+}
+
+.dictionary-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .dict-table, .postings-table {
@@ -462,6 +594,12 @@ mark {
   border-bottom: 1px solid var(--border);
 }
 
+.dictionary-body .dict-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 .dict-table td, .postings-table td {
   padding: 9px 16px;
   border-top: 1px solid var(--border-light);
@@ -473,6 +611,20 @@ mark {
 
 .dict-table tbody tr:hover, .postings-table tbody tr:hover {
   background: var(--bg);
+}
+
+.dict-row {
+  cursor: pointer;
+}
+
+.dict-row.selected,
+.dict-row.selected:hover {
+  background: var(--primary-soft);
+}
+
+.dict-row.selected .term-cell {
+  color: var(--primary);
+  font-weight: 700;
 }
 
 .term-cell {
@@ -519,9 +671,10 @@ mark {
   align-items: center;
   justify-content: center;
   gap: 16px;
-  margin: 18px 0;
+  margin: 12px 0 0;
   font-size: 13px;
   color: var(--text-secondary);
+  flex: 0 0 auto;
 }
 
 .pagination button {
@@ -547,36 +700,96 @@ mark {
 }
 
 /* ── Postings Panel ── */
-.postings-panel {
-  margin-bottom: 24px;
-  animation: slideDown 0.2s ease;
-}
-
-.postings-scroll {
-  max-height: 400px;
+.postings-pane {
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding-right: 4px;
 }
 
-.postings-panel h3 {
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 12px;
+.postings-empty {
+  height: 100%;
+  min-height: 220px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  justify-content: center;
+  background: var(--card-bg);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-tertiary);
+  font-size: 13.5px;
 }
 
-.postings-panel code {
-  background: var(--border-light);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-family: var(--font-mono);
-  color: var(--primary);
+.posting-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.posting-card {
+  background: var(--card-bg);
   border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.posting-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.posting-doc,
+.posting-occ {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.posting-doc {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.posting-occ {
+  color: var(--text-secondary);
+  background: var(--border-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 7px;
+}
+
+.posting-title {
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.posting-meta {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+.context-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.context-line {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  overflow-wrap: anywhere;
 }
 
 /* ── Responsive: Tablet (≤768px) ── */
@@ -669,6 +882,39 @@ mark {
   .positions {
     max-width: 200px;
   }
+
+  #app:has(.index-page) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .app:has(.index-page),
+  .app:has(.index-page) main,
+  .index-page {
+    display: block;
+    height: auto;
+  }
+
+  .index-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .dictionary-pane {
+    position: static;
+    height: auto;
+    overflow: visible;
+  }
+
+  .dictionary-body {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .postings-pane {
+    height: auto;
+    overflow: visible;
+    padding-right: 0;
+  }
 }
 
 /* ── Responsive: Mobile (≤480px) ── */
@@ -760,12 +1006,24 @@ mark {
     min-height: 36px;
   }
 
-  .postings-panel h3 {
-    font-size: 14px;
+  .alphabet-row {
+    grid-template-columns: 24px minmax(0, 1fr) 24px;
   }
 
-  .postings-scroll {
-    max-height: 300px;
+  .alpha-strip {
+    gap: 8px;
+  }
+
+  .posting-card {
+    padding: 12px 13px;
+  }
+
+  .posting-title {
+    font-size: 13.5px;
+  }
+
+  .context-line {
+    font-size: 12.5px;
   }
 
   .synonym-tag {

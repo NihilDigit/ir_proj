@@ -55,10 +55,19 @@ class SoundexSearchResponse(BaseModel):
     results: list[SearchResultItem]
 
 
+class PostingContext(BaseModel):
+    position: int
+    html: str
+
+
 class PostingsEntry(BaseModel):
     doc_id: int
+    title: str
+    author: str
+    bib: str
     tf: int
     positions: list[int]
+    contexts: list[PostingContext]
 
 
 class PostingsResponse(BaseModel):
