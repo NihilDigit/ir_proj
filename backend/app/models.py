@@ -9,7 +9,7 @@ class SearchRequest(BaseModel):
 class ExpandedSearchRequest(BaseModel):
     query: str
     top_k: int = 50
-    max_synonyms: int = 3
+    max_synonyms: int = 1
 
 
 class SearchResultItem(BaseModel):

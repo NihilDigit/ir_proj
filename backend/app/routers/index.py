@@ -14,11 +14,22 @@ router = APIRouter()
 
 @router.get("/index/dictionary", response_model=DictionaryResponse)
 async def get_dictionary(
-    request: Request, page: int = 1, size: int = 50, search: str = "", letter: str = ""
+    request: Request,
+    page: int = 1,
+    size: int = 50,
+    search: str = "",
+    letter: str = "",
+    sort_by: str = "term",
+    sort_order: str = "asc",
 ):
     engine = request.app.state.engine
     terms, total = engine.index.get_dictionary(
-        search=search, page=page, size=size, letter=letter
+        search=search,
+        page=page,
+        size=size,
+        letter=letter,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
     return DictionaryResponse(total=total, page=page, size=size, terms=terms)
 
@@ -63,7 +74,9 @@ async def get_postings(term: str, request: Request):
                 engine, engine.index.documents[doc_id], stemmed, positions
             ),
         )
-        for doc_id, positions in sorted(raw_postings.items())
+        for doc_id, positions in sorted(
+            raw_postings.items(), key=lambda item: (-len(item[1]), item[0])
+        )
     ]
     return PostingsResponse(
         term=term, stemmed_term=stemmed, df=len(postings), postings=postings

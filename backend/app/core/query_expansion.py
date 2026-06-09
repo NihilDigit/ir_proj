@@ -9,7 +9,7 @@ class QueryExpander:
     def __init__(self, preprocessor: Preprocessor):
         self.preprocessor = preprocessor
 
-    def expand(self, query_terms: list[str], max_synonyms: int = 3) -> dict:
+    def expand(self, query_terms: list[str], max_synonyms: int = 1) -> dict:
         expansion_map: dict[str, list[str]] = {}
         all_terms = set(query_terms)
 

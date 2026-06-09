@@ -1,10 +1,13 @@
 <template>
   <div class="results" v-if="results.length > 0">
-    <p class="result-count">
-      共找到 <strong>{{ totalCount }}</strong> 条结果
-      <span v-if="results.length < totalCount">（显示前 {{ results.length }} 条）</span>
-    </p>
-    <div class="result-item" v-for="(item, i) in results" :key="item.doc_id">
+    <article
+      class="result-item"
+      v-for="(item, i) in results"
+      :key="item.doc_id"
+      tabindex="0"
+      @click="openDetail(item.doc_id)"
+      @keyup.enter="openDetail(item.doc_id)"
+    >
       <div class="result-header">
         <span class="result-rank">#{{ i + 1 }}</span>
         <span class="result-docid">Doc {{ item.doc_id }}</span>
@@ -12,29 +15,22 @@
           相似度: {{ item.score.toFixed(4) }}
         </span>
       </div>
-      <h3 class="result-title" v-html="item.highlighted_title"></h3>
+      <h3 class="result-title" v-html="formatTitle(item.highlighted_title)"></h3>
       <p class="result-author" v-if="item.author">{{ item.author }}</p>
       <p class="result-snippet" v-html="item.highlighted_snippet"></p>
-      <button class="btn-detail" @click="toggleDetail(item.doc_id)">
-        {{ expandedId === item.doc_id ? '收起' : '查看详情' }}
-      </button>
-      <div class="doc-detail" v-if="expandedId === item.doc_id && detailDoc">
-        <h4>完整内容</h4>
-        <p><strong>标题:</strong> <span v-html="detailDoc.highlighted_title"></span></p>
-        <p><strong>作者:</strong> {{ detailDoc.author }}</p>
-        <p><strong>出处:</strong> {{ detailDoc.bib }}</p>
-        <div class="doc-text" v-html="detailDoc.highlighted_text"></div>
-      </div>
-    </div>
+    </article>
   </div>
   <div class="no-results" v-else-if="searched">
     未找到结果
   </div>
+
+  <DocumentModal v-if="detailDoc" :document="detailDoc" @close="closeDetail" />
 </template>
 
 <script setup>
 import { ref } from 'vue'
 import { getDocument } from '../api'
+import DocumentModal from './DocumentModal.vue'
 
 const props = defineProps({
   results: { type: Array, default: () => [] },
@@ -46,14 +42,44 @@ const props = defineProps({
 const expandedId = ref(null)
 const detailDoc = ref(null)
 
-async function toggleDetail(docId) {
-  if (expandedId.value === docId) {
-    expandedId.value = null
-    detailDoc.value = null
-    return
-  }
+async function openDetail(docId) {
   expandedId.value = docId
   const res = await getDocument(docId, props.highlightTerms)
   detailDoc.value = res.data
+}
+
+function closeDetail() {
+  expandedId.value = null
+  detailDoc.value = null
+}
+
+function formatTitle(html) {
+  let result = ''
+  let i = 0
+  let sentenceStart = true
+  while (i < html.length) {
+    const char = html[i]
+    if (char === '<') {
+      const tagEnd = html.indexOf('>', i)
+      if (tagEnd === -1) {
+        result += char
+        i += 1
+      } else {
+        result += html.slice(i, tagEnd + 1)
+        i = tagEnd + 1
+      }
+      continue
+    }
+    if (sentenceStart && /[A-Za-z]/.test(char)) {
+      result += char.toUpperCase()
+      sentenceStart = false
+    } else {
+      result += char
+      if (/[A-Za-z0-9]/.test(char)) sentenceStart = false
+    }
+    if (/[.!?]/.test(char)) sentenceStart = true
+    i += 1
+  }
+  return result
 }
 </script>
