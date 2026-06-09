@@ -133,7 +133,7 @@ $$\text{BM25}(q, d) = \sum_{t \in q} \text{idf}_t \cdot \frac{f_{t,d} \cdot (k_1
 6. 文档评分：TF-IDF 余弦相似度排序，预计算文档模长加速。
 7. 查询扩展：基于 WordNet 的同义词扩展，提高检索召回率。
 8. 发音矫正：基于 Soundex 编码的拼写容错，把发音相近的查询词映射回词典词。
-9. Web 界面：布尔检索、短语查询、查询扩展、发音矫正、索引浏览五页。
+9. Web 界面：统一检索工作台支持四种检索模式，词典浏览页面用于查看词项统计和倒排记录。
 
 系统数据流为：Cranfield XML 数据文件先由解析器提取，再交给预处理器做文本规范化，然后构建倒排索引。用户查询经过相同的预处理流程后，由对应的检索模块在索引中匹配，匹配结果经 TF-IDF 排序后通过 FastAPI 返回前端展示。
 
@@ -656,7 +656,7 @@ def _rank(self, query_terms, doc_ids, top_k):
 4. 对候选同义词进行词干提取，过滤掉与原词同词干的候选以避免冗余。
 5. 最多保留用户指定数量的同义词。
 
-示例：查询 "heat transfer" 的扩展结果为 heat → warmth, hotness, passion；transfer → transferral, transport, conveyance。扩展后的所有词项经词干提取后共同参与 TF-IDF 检索。可以看到，查询扩展能够扩大检索范围，但也可能引入不合适的词项，例如 "heat" 的同义词 "passion" 在航空动力学领域并不相关。因此，本系统限制每个词项最多扩展 3 个同义词，尽量控制噪声。
+示例：查询 "velocity" 时，WordNet 返回的候选同义词中包含 "speed"。系统将原词与扩展词共同词干化后参与 TF-IDF 检索，因此既能命中包含 "velocity" 的文档，也能命中包含 "speed" 的相关文档。查询扩展能够扩大检索范围，但也可能引入领域无关词项；本系统默认每个词项最多扩展 1 个同义词，以降低扩展噪声。
 
 - 流程与核心代码：同义词查询的流程如图 10 所示。
 
@@ -667,7 +667,7 @@ class QueryExpander:
     def __init__(self, preprocessor: Preprocessor):
         self.preprocessor = preprocessor
 
-    def expand(self, query_terms: list[str], max_synonyms: int = 3) -> dict:
+    def expand(self, query_terms: list[str], max_synonyms: int = 1) -> dict:
         expansion_map: dict[str, list[str]] = {}
         all_terms = set(query_terms)
 
@@ -701,7 +701,7 @@ class QueryExpander:
 
 `expand` 方法返回一个字典，包含原始词项、所有扩展后的词项、经词干提取后的词项列表以及每个原始词到其同义词的映射关系。其中 `expansion_map` 用于前端展示同义词映射，`expanded_stemmed` 用于实际的 TF-IDF 检索。候选同义词按字母序固定展示顺序，通过对所有扩展词项统一进行词干化并去重，避免同义词在词干提取后与原词产生重复。
 
-- 运行界面：图 11 为同义词查询的运行界面。输入 `heat transfer`，系统展示每个词项的 WordNet 同义词映射，并使用扩展后的词项集合进行检索。
+- 运行界面：图 11 为同义词查询的运行界面。输入 `velocity`，系统展示 `velocity → speed` 的扩展映射，并使用原词与扩展词共同检索。
 
 ![图 11  同义词查询运行界面](figures/ui_expanded_result.png){width=13cm}
 
@@ -768,7 +768,7 @@ class SoundexCorrector:
 
 `SoundexCorrector` 在初始化时接收倒排索引的全部词项，为每个词计算 Soundex 编码并构建反向映射。查询阶段的单次 `suggest` 调用仅需 O(1) 的哈希查找，性能开销可忽略。由 `_CODE_MAP` 中的 `h` 与 `w` 故意缺席可见：该实现跳过这两个字母而不是将它们视作分隔符，对应标准 Soundex 的常见简化版，对英文普通文本的纠错效果几乎没有损失。
 
-- 运行界面：图 13 为发音矫正的运行界面。输入 `bounderi flo`，系统显示 `bounderi → B536 → boundari` 和 `flo → F400 → flow, fli, fl, fail, fale`。检索阶段只取每个查询词的 top-1 候选参与 TF-IDF 排序，避免拼写相近但语义无关的候选污染结果；最终得到 50 条排序后的文档。
+- 运行界面：图 13 为发音矫正的运行界面。输入 `shok`，系统计算得到 Soundex 编码 `S200`，并返回 `shock, sake, seek, size, soak` 等候选词。检索阶段只取每个查询词的 top-1 候选参与 TF-IDF 排序，因此该查询实际以 `shock` 为主要矫正词返回相关文档。
 
 ![图 13  发音矫正运行界面](figures/ui_soundex_result.png){width=13cm}
 
@@ -817,19 +817,35 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 
 #### 3.8.3 界面展示
 
-系统前端包含五个主要页面，布尔检索、短语查询、词典浏览的界面如图 14–16 所示。
+系统前端采用统一检索工作台组织四种检索模式。首页将搜索框作为主要入口，布尔检索、短语查询、查询扩展和发音矫正通过模式按钮切换；进入结果态后，搜索框固定在页面上方，检索结果以文档卡片展示。词典浏览作为独立入口，用于查看词项统计、排序后的词典表和具体倒排记录。
 
-图 14 为布尔检索界面，输入 `aerodynamics AND wing NOT flutter`，系统返回 50 条排序结果，匹配词项以黄色高亮显示，结果按余弦相似度降序排列。界面顶部提供 AND、OR、NOT 三个运算符辅助按钮，用户点击即可在查询输入框中插入对应运算符，降低了布尔查询的构造门槛。
+图 14 为统一检索首页。四种检索模式共用同一个搜索入口，查询扩展和发音矫正模式在搜索框右侧提供参数选择，避免为相近功能拆分多个相似页面。
 
-![图 14  布尔检索界面](figures/ui_boolean_result.png){width=13cm}
+![图 14  统一检索首页](figures/ui_search_home.png){width=12cm}
 
-图 15 为短语查询界面，输入短语 `boundary layer`，系统通过位置信息匹配到含该连续短语的文档集合，再按 TF-IDF 余弦相似度排序。
+图 15 为布尔检索结果界面。输入 `aerodynamics AND wing NOT flutter` 后，系统返回满足布尔表达式的候选文档，并按 TF-IDF 余弦相似度排序。结果卡片展示文档编号、相似度、标题、作者和摘要片段，匹配词项以黄色高亮显示。
 
-![图 15  短语查询界面](figures/ui_phrase_result.png){width=13cm}
+![图 15  布尔检索结果界面](figures/ui_boolean_result.png){width=13cm}
 
-图 16 为词典浏览界面，按前缀过滤可查看相关词项，点击词项可展开其完整倒排记录表，包括文档 ID、词频和位置列表。分页控件允许用户完整浏览全部词项。
+图 16 为短语查询结果界面。输入短语 `aerodynamic heating` 后，系统通过词项位置信息筛选出连续出现该短语的文档，再对候选文档计算 TF-IDF 排序分数。
 
-![图 16  词典浏览与倒排记录表](figures/ui_index_viewer.png){width=13cm}
+![图 16  短语查询结果界面](figures/ui_phrase_result.png){width=13cm}
+
+检索结果中的文档卡片可以继续打开文档详情。图 17 展示了 Doc 599 的原文弹窗，弹窗中保留文档编号、标题、作者、出处和正文内容，并对命中词项继续高亮。正文显示时会去除与标题重复的开头文本，并对段落做基础排版，以便查看较长摘要。
+
+![图 17  文档详情弹窗](figures/ui_document_modal.png){width=12.5cm}
+
+图 18 为词典浏览界面。左侧词典表支持按字母分组查看，也支持按 Term、DF、TF 排序；右侧显示当前词项的倒排记录卡片。每张卡片包含命中文档的标题、作者、出处、词频以及命中位置附近的上下文。
+
+![图 18  词典浏览与倒排记录](figures/ui_index_viewer.png){width=13cm}
+
+图 19 展示了词典表的排序入口。Term、DF 和 TF 表头均可点击切换正序或倒序，便于查看高文档频率词、高总词频词和字母序词项。
+
+![图 19  词典排序入口](figures/ui_dictionary_sorting.png){width=8cm}
+
+图 20 展示了单条倒排记录卡片。系统不只显示文档 ID 和位置编号，还展示命中位置前后若干词项，并直接高亮命中词，便于检查该词项在文档中的实际语境。
+
+![图 20  倒排记录上下文卡片](figures/ui_postings_context.png){width=11cm}
 
 ### 3.9 系统效果评估
 
